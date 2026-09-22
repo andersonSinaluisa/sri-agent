@@ -4,8 +4,14 @@ import { LOGIN, URLS } from "./selectores.mjs";
 /** Error de credenciales: no se debe reintentar automáticamente. */
 export class ErrorCredenciales extends Error {}
 
+/**
+ * Hay sesion si el portal no nos mando al login. Se mira la URL y ademas la
+ * ausencia del formulario, porque Keycloak a veces sirve el login sin cambiar
+ * la barra de direcciones.
+ */
 async function sesionActiva(page) {
-  return (await page.locator(LOGIN.marcaAutenticado).count()) > 0;
+  if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
+  return (await page.locator(LOGIN.campoUsuario).count()) === 0;
 }
 
 /**
@@ -29,9 +35,11 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
   await page.fill(LOGIN.campoClave, credenciales.clave);
   await page.click(LOGIN.botonIngresar);
 
-  await page
-    .waitForSelector(`${LOGIN.marcaAutenticado}, ${LOGIN.mensajeError}`, { timeout: 45_000 })
-    .catch(() => {});
+  // Se espera a salir del realm de Keycloak, o a que aparezca el error.
+  await Promise.race([
+    page.waitForURL((u) => !u.href.includes(LOGIN.rutaAutenticacion), { timeout: 45_000 }),
+    page.waitForSelector(LOGIN.mensajeError, { timeout: 45_000 }),
+  ]).catch(() => {});
 
   if (await page.locator(LOGIN.mensajeError).count()) {
     const detalle = (await page.locator(LOGIN.mensajeError).first().innerText()).trim();
@@ -40,8 +48,9 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
 
   if (!(await sesionActiva(page))) {
     throw new Error(
-      "No se confirmó el inicio de sesión. El portal pudo cambiar de diseño: " +
-        "revisá LOGIN.marcaAutenticado en selectores.mjs contra la captura de diagnóstico.",
+      `No se confirmó el inicio de sesión; la página quedó en ${page.url()}. ` +
+        "Si el formulario sigue visible, revisá LOGIN en selectores.mjs contra " +
+        "la captura de diagnóstico.",
     );
   }
 

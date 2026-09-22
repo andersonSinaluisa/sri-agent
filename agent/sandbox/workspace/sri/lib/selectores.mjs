@@ -13,22 +13,35 @@
 // └──────────────────────────────────────────────────────────────────────────┘
 
 export const URLS = {
-  login: "https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT",
+  // Punto de entrada autenticado. Sin sesion redirige al login de Keycloak en
+  // /auth/realms/Internet/..., con parametros de estado que cambian en cada
+  // visita: por eso se apunta acá y no a la URL del formulario.
+  login: "https://srienlinea.sri.gob.ec/tuportal-internet/",
   inicio: "https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT",
+  // Descubierta con `npm run sri:inspeccionar`. Es un punto de entrada que
+  // exige sesion: sin autenticar redirige al login.
   comprobantesRecibidos:
-    "https://srienlinea.sri.gob.ec/comprobantes-electronicos-internet/pages/consultas/recibidos/comprobantesRecibidos.jsf",
+    "https://srienlinea.sri.gob.ec/tuportal-internet/accederAplicacion.jspa?redireccion=57&idGrupo=55",
   declaracionIva:
     "https://srienlinea.sri.gob.ec/sri-en-linea/SriDeclaracionesWeb/Declaraciones/Declaraciones",
 };
 
 export const LOGIN = {
+  // VERIFICADOS contra el portal con `npm run sri:inspeccionar`.
+  // El login es Keycloak, de ahi los ids con prefijo kc-.
   campoUsuario: "#usuario",
+  campoCiAdicional: "#ciAdicional", // opcional: solo para usuarios adicionales
   campoClave: "#password",
   botonIngresar: "#kc-login",
-  // Cualquier elemento que solo exista con sesión iniciada.
-  marcaAutenticado: "#cerrarSesion",
-  // Mensaje de error de credenciales, para distinguirlo de una caída del portal.
-  mensajeError: ".alert-error, .kc-feedback-text",
+
+  // La sesion se detecta por la URL, no por un elemento: estar o no en el
+  // realm de Keycloak es inequivoco y no depende del diseno de la pagina.
+  rutaAutenticacion: "/auth/realms/",
+
+  // Mensaje de credenciales rechazadas. Sin verificar todavia: son los
+  // contenedores estandar de Keycloak. Si el login falla sin decir por que,
+  // revisar esto primero.
+  mensajeError: "#input-error, .alert-error, .kc-feedback-text",
 };
 
 export const COMPROBANTES = {
