@@ -89,6 +89,25 @@ info "Comprobando requisitos."
 [ -f "$ARCHIVO_ENV" ] || error "Falta $ARCHIVO_ENV."
 docker info >/dev/null 2>&1 || error "El daemon de Docker no responde."
 
+# sudo resetea el PATH a `secure_path`, así que node/npm/npx se invocan por
+# ruta absoluta. Resolverlos acá también detecta una instalación que el
+# usuario de servicio no puede usar.
+NODE_BIN="$(command -v node || true)"
+NPM_BIN="$(command -v npm || true)"
+NPX_BIN="$(command -v npx || true)"
+if [ -z "$NODE_BIN" ] || [ -z "$NPM_BIN" ] || [ -z "$NPX_BIN" ]; then
+  error "No encuentro node, npm o npx en el PATH de root."
+fi
+
+if ! sudo -u "$USUARIO" "$NODE_BIN" -v >/dev/null 2>&1; then
+  error "El usuario '$USUARIO' no puede ejecutar $NODE_BIN.
+    Pasa cuando Node se instaló con nvm dentro de /root: el usuario de
+    servicio no tiene acceso a ese directorio. Instalalo a nivel de sistema:
+
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+      apt-get install -y nodejs"
+fi
+
 # El archivo se LEE, no se sourcea. systemd lo parsea con su propio formato,
 # que admite valores con espacios y símbolos; pasarlos por el shell podía
 # abortar el script en silencio y, peor, ejecutar lo que hubiera adentro.
@@ -127,17 +146,17 @@ info "Commit: $COMMIT_PREVIO -> $COMMIT_NUEVO"
 
 # ── Build ───────────────────────────────────────────────────────────────────
 info "Instalando dependencias."
-como_servicio npm ci --no-audit --no-fund
+como_servicio "$NPM_BIN" ci --no-audit --no-fund
 
 info "Verificando tipos."
-como_servicio npx tsc || error "El typecheck falló; no se despliega."
+como_servicio "$NPX_BIN" tsc || error "El typecheck falló; no se despliega."
 
 info "Guardando el build anterior para poder volver."
 rm -rf "$PREVIA"
 [ -d "$SALIDA" ] && cp -a "$SALIDA" "$PREVIA"
 
 info "Compilando."
-if ! como_servicio npm run build; then
+if ! como_servicio "$NPM_BIN" run build; then
   aviso "El build falló."
   restaurar_anterior
   exit 1

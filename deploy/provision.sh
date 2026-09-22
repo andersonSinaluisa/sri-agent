@@ -34,10 +34,31 @@ trap 'codigo=$?; printf "[1;31mxx[0m  Falló en la línea %s (código %s).
 
 # ── Requisitos ──────────────────────────────────────────────────────────────
 command -v git >/dev/null || error "Falta git."
-command -v node >/dev/null || error "Falta Node.js 24.x."
 
-VERSION_NODE="$(node -p 'process.versions.node.split(".")[0]')"
+NODE_BIN="$(command -v node || true)"
+NPX_BIN="$(command -v npx || true)"
+if [ -z "$NODE_BIN" ] || [ -z "$NPX_BIN" ]; then
+  error "Falta Node.js 24.x. Instalalo a nivel de sistema:
+
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+      apt-get install -y nodejs"
+fi
+
+VERSION_NODE="$("$NODE_BIN" -p 'process.versions.node.split(".")[0]')"
 [ "$VERSION_NODE" -ge 24 ] || error "Node $VERSION_NODE detectado; hace falta 24.x."
+
+# systemd y sudo no comparten el PATH de root. Un Node instalado con nvm
+# dentro de /root deja al usuario de servicio sin intérprete.
+case "$NODE_BIN" in
+  /root/*|/home/*)
+    error "Node está en $NODE_BIN, dentro de un home de usuario.
+    El servicio corre como '$USUARIO' y no va a poder ejecutarlo.
+    Instalalo a nivel de sistema:
+
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+      apt-get install -y nodejs"
+    ;;
+esac
 
 if ! command -v docker >/dev/null; then
   error "Falta Docker. El sandbox donde corre Chromium lo necesita."
@@ -87,6 +108,8 @@ fi
 # ── Servicio ────────────────────────────────────────────────────────────────
 info "Instalando la unidad de systemd."
 install -m 644 "$DESTINO/deploy/sri-agent.service" /etc/systemd/system/sri-agent.service
+# La unidad trae /usr/bin/npx por defecto; se reemplaza por la ruta real.
+sed -i "s|^ExecStart=.*|ExecStart=$NPX_BIN eve start --host 127.0.0.1 --port 3000|"   /etc/systemd/system/sri-agent.service
 systemctl daemon-reload
 systemctl enable sri-agent
 
