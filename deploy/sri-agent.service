@@ -11,6 +11,13 @@ After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
 
+# Sin esto, un arranque que falla siempre (p. ej. el bootstrap del sandbox)
+# reinicia para siempre cada 5s, quemando CPU y llenando el journal. Tras 5
+# fallos en 5 minutos systemd se rinde y deja el servicio en estado failed,
+# que es lo que querés ver.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=sri

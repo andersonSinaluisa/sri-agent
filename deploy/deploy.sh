@@ -16,7 +16,8 @@ DESTINO="${SRI_APP_DIR:-/srv/sri-agent}"
 ARCHIVO_ENV="${SRI_ENV_FILE:-/etc/sri-agent/env}"
 SERVICIO="sri-agent"
 PUERTO="${SRI_PORT:-3000}"
-INTENTOS_SALUD="${SRI_HEALTH_RETRIES:-30}"
+# La primera vez el arranque baja la imagen del sandbox (~2 GB): 60s no alcanza.
+INTENTOS_SALUD="${SRI_HEALTH_RETRIES:-150}"
 
 SALIDA="$DESTINO/.output"
 PREVIA="$DESTINO/.output.anterior"
@@ -181,7 +182,20 @@ if ! como_servicio "$NPM_BIN" run build; then
 fi
 
 # ── Reinicio y verificación ─────────────────────────────────────────────────
+# Bajar la imagen acá y no durante el arranque hace que el health check mida
+# el servicio y no la velocidad de tu red. Debe coincidir con IMAGEN_PLAYWRIGHT
+# de agent/sandbox/sandbox.ts.
+BACKEND_SANDBOX="$(valor_de SRI_SANDBOX_BACKEND)"
+IMAGEN_SANDBOX="$(valor_de SRI_IMAGEN_SANDBOX)"
+: "${IMAGEN_SANDBOX:=mcr.microsoft.com/playwright:v1.56.0-noble}"
+if [ "${BACKEND_SANDBOX:-docker}" = "docker" ] && [ "$(valor_de SRI_EJECUCION)" != "local" ]; then
+  info "Descargando la imagen del sandbox ($IMAGEN_SANDBOX)."
+  docker pull "$IMAGEN_SANDBOX" || error "No se pudo descargar $IMAGEN_SANDBOX."
+fi
+
 info "Reiniciando $SERVICIO."
+# Limpia el contador de StartLimitBurst de intentos anteriores.
+systemctl reset-failed "$SERVICIO" 2>/dev/null || true
 systemctl restart "$SERVICIO"
 
 if esperar_salud; then
