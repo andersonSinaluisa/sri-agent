@@ -21,6 +21,7 @@ INTENTOS_SALUD="${SRI_HEALTH_RETRIES:-150}"
 
 SALIDA="$DESTINO/.output"
 PREVIA="$DESTINO/.output.anterior"
+FALLIDO="$DESTINO/.output.fallido"
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 aviso() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
@@ -36,10 +37,12 @@ trap 'al_fallar $LINENO' ERR
 
 SKIP_PULL=0
 ROLLBACK=0
+SIN_ROLLBACK=0
 for arg in "$@"; do
   case "$arg" in
     --skip-pull) SKIP_PULL=1 ;;
     --rollback) ROLLBACK=1 ;;
+    --no-rollback) SIN_ROLLBACK=1 ;;
     *) error "Argumento desconocido: $arg" ;;
   esac
 done
@@ -51,11 +54,20 @@ done
 # root (/root/.npm), a la que "$USUARIO" no tiene acceso, y falla con EACCES.
 como_servicio() { sudo -u "$USUARIO" -H "$@"; }
 
+# 0 = responde | 1 = agotó el tiempo, seguía arrancando | 2 = el servicio murió
 esperar_salud() {
-  local intento=1
+  local intento=1 estado
   while [ "$intento" -le "$INTENTOS_SALUD" ]; do
     if curl -fsS --max-time 3 "http://127.0.0.1:$PUERTO/eve/v1/health" >/dev/null 2>&1; then
       return 0
+    fi
+    estado="$(systemctl is-active "$SERVICIO" 2>/dev/null || true)"
+    if [ "$estado" = "failed" ] || [ "$estado" = "inactive" ]; then
+      return 2
+    fi
+    # Cada 30s se avisa que sigue vivo: el template del sandbox puede tardar.
+    if [ $((intento % 15)) -eq 0 ]; then
+      info "Sigue arrancando ($((intento * 2))s)... el template del sandbox tarda la primera vez."
     fi
     sleep 2
     intento=$((intento + 1))
@@ -66,7 +78,9 @@ esperar_salud() {
 restaurar_anterior() {
   if [ -d "$PREVIA" ]; then
     aviso "Restaurando el build anterior."
-    rm -rf "$SALIDA"
+    # El build que falló se conserva: sin él no hay nada que investigar.
+    rm -rf "$FALLIDO"
+    [ -d "$SALIDA" ] && mv "$SALIDA" "$FALLIDO"
     mv "$PREVIA" "$SALIDA"
     systemctl restart "$SERVICIO"
     if esperar_salud; then
@@ -198,13 +212,36 @@ info "Reiniciando $SERVICIO."
 systemctl reset-failed "$SERVICIO" 2>/dev/null || true
 systemctl restart "$SERVICIO"
 
-if esperar_salud; then
-  info "Desplegado: $COMMIT_NUEVO responde en /eve/v1/health."
-  aviso "La primera sesión construye el template del sandbox (Playwright + Chromium,"
-  aviso "~400 MB) y tarda varios minutos. Las siguientes lo reutilizan."
-else
-  aviso "El servicio no respondió tras $((INTENTOS_SALUD * 2))s."
-  journalctl -u "$SERVICIO" -n 40 --no-pager || true
-  restaurar_anterior
-  exit 1
-fi
+set +e
+esperar_salud
+SALUD=$?
+set -e
+
+case "$SALUD" in
+  0)
+    info "Desplegado: $COMMIT_NUEVO responde en /eve/v1/health."
+    ;;
+  2)
+    aviso "El servicio se cayó durante el arranque."
+    journalctl -u "$SERVICIO" -n 60 --no-pager || true
+    if [ "$SIN_ROLLBACK" -eq 1 ]; then
+      error "Se deja el build nuevo puesto (--no-rollback)."
+    fi
+    restaurar_anterior
+    exit 1
+    ;;
+  *)
+    aviso "Sigue arrancando tras $((INTENTOS_SALUD * 2))s y no respondió todavía."
+    aviso "El servicio NO se cayó: probablemente el template del sandbox aún se construye."
+    journalctl -u "$SERVICIO" -n 60 --no-pager || true
+    if [ "$SIN_ROLLBACK" -eq 1 ]; then
+      aviso "Se deja el build nuevo puesto (--no-rollback). Seguilo con:"
+      aviso "  journalctl -u $SERVICIO -f"
+      exit 0
+    fi
+    aviso "Si querés darle más tiempo en vez de revertir:"
+    aviso "  SRI_HEALTH_RETRIES=600 bash deploy/deploy.sh --skip-pull --no-rollback"
+    restaurar_anterior
+    exit 1
+    ;;
+esac

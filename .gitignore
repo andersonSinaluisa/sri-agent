@@ -16,6 +16,7 @@ dist
 
 # Build anterior que guarda deploy.sh para poder hacer rollback.
 .output.anterior
+.output.fallido
 
 # Capturas, descargas y borradores del modo de ejecucion local.
 .sri-datos
