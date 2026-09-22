@@ -92,9 +92,20 @@ docker info >/dev/null 2>&1 || error "El daemon de Docker no responde."
 # sudo resetea el PATH a `secure_path`, así que node/npm/npx se invocan por
 # ruta absoluta. Resolverlos acá también detecta una instalación que el
 # usuario de servicio no puede usar.
-NODE_BIN="$(command -v node || true)"
-NPM_BIN="$(command -v npm || true)"
-NPX_BIN="$(command -v npx || true)"
+# Se prefiere una instalación de sistema: es la única que el usuario de
+# servicio puede ejecutar. El PATH de root suele anteponer un nvm, así que
+# `command -v` solo se usa como último recurso.
+resolver_bin() {
+  local nombre="$1" dir
+  for dir in /usr/bin /usr/local/bin; do
+    [ -x "$dir/$nombre" ] && { printf '%s' "$dir/$nombre"; return 0; }
+  done
+  command -v "$nombre" || true
+}
+
+NODE_BIN="$(resolver_bin node)"
+NPM_BIN="$(resolver_bin npm)"
+NPX_BIN="$(resolver_bin npx)"
 if [ -z "$NODE_BIN" ] || [ -z "$NPM_BIN" ] || [ -z "$NPX_BIN" ]; then
   error "No encuentro node, npm o npx en el PATH de root."
 fi

@@ -35,8 +35,19 @@ trap 'codigo=$?; printf "[1;31mxx[0m  Falló en la línea %s (código %s).
 # ── Requisitos ──────────────────────────────────────────────────────────────
 command -v git >/dev/null || error "Falta git."
 
-NODE_BIN="$(command -v node || true)"
-NPX_BIN="$(command -v npx || true)"
+# Se prefiere una instalación de sistema: es la única que el usuario de
+# servicio puede ejecutar. El PATH de root suele anteponer un nvm, así que
+# `command -v` solo se usa como último recurso.
+resolver_bin() {
+  local nombre="$1" dir
+  for dir in /usr/bin /usr/local/bin; do
+    [ -x "$dir/$nombre" ] && { printf '%s' "$dir/$nombre"; return 0; }
+  done
+  command -v "$nombre" || true
+}
+
+NODE_BIN="$(resolver_bin node)"
+NPX_BIN="$(resolver_bin npx)"
 if [ -z "$NODE_BIN" ] || [ -z "$NPX_BIN" ]; then
   error "Falta Node.js 24.x. Instalalo a nivel de sistema:
 
