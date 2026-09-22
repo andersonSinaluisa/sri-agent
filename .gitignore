@@ -19,3 +19,6 @@ dist
 
 # Capturas, descargas y borradores del modo de ejecucion local.
 .sri-datos
+
+# Cache de npm del usuario de servicio (su HOME es el directorio de la app).
+.npm

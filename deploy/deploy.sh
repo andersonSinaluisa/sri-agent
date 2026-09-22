@@ -46,7 +46,9 @@ done
 [ "$(id -u)" -eq 0 ] || error "Corré este script como root (sudo)."
 [ -d "$DESTINO/.git" ] || error "No hay un checkout en $DESTINO. Corré provision.sh primero."
 
-como_servicio() { sudo -u "$USUARIO" --preserve-env=HOME "$@"; }
+# -H fija HOME al home del usuario de servicio. Sin esto, npm usa la caché de
+# root (/root/.npm), a la que "$USUARIO" no tiene acceso, y falla con EACCES.
+como_servicio() { sudo -u "$USUARIO" -H "$@"; }
 
 esperar_salud() {
   local intento=1
@@ -146,6 +148,11 @@ fi
 
 # ── Código ──────────────────────────────────────────────────────────────────
 cd "$DESTINO"
+# Cualquier cosa que se haya corrido como root antes deja archivos que el
+# usuario de servicio no puede sobrescribir.
+info "Normalizando la propiedad de $DESTINO."
+chown -R "$USUARIO":"$USUARIO" "$DESTINO"
+
 COMMIT_PREVIO="$(como_servicio git rev-parse --short HEAD)"
 
 if [ "$SKIP_PULL" -eq 0 ]; then
