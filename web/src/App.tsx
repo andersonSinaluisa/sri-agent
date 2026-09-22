@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useEveAgent, type EveMessagePart } from "eve/react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { proyectarActividades, type Actividad } from "./actividad";
 
 interface Credenciales {
   readonly usuario: string;
@@ -139,6 +140,8 @@ function Chat({ credenciales, onSalir }: { credenciales: Credenciales; onSalir: 
         />
       ))}
 
+      <PanelActividad actividades={proyectarActividades(agente.events)} ocupado={ocupado} />
+
       <form className="redactor" onSubmit={enviar}>
         <input
           name="mensaje"
@@ -157,6 +160,35 @@ function Chat({ credenciales, onSalir }: { credenciales: Credenciales; onSalir: 
         )}
       </form>
     </div>
+  );
+}
+
+/**
+ * Lo que el agente está haciendo, en vivo. Mientras hay un turno activo se
+ * muestra todo; cuando termina queda solo lo último, para no tapar la
+ * conversación con el historial de llamadas.
+ */
+function PanelActividad({
+  actividades,
+  ocupado,
+}: {
+  actividades: readonly Actividad[];
+  ocupado: boolean;
+}) {
+  if (actividades.length === 0) return null;
+  const visibles = ocupado ? actividades.slice(-6) : actividades.slice(-1);
+
+  return (
+    <section className="actividad" aria-live="polite">
+      {visibles.map((actividad) => (
+        <div key={actividad.callId} className={`paso paso-${actividad.estado}`}>
+          <span className="marca" aria-hidden="true">
+            {actividad.estado === "corriendo" ? "" : actividad.estado === "hecho" ? "✓" : "✕"}
+          </span>
+          <span className="texto">{actividad.etiqueta}</span>
+        </div>
+      ))}
+    </section>
   );
 }
 

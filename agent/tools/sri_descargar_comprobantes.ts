@@ -37,7 +37,10 @@ export default defineTool({
       .describe("Código del SRI: 1 factura, 4 nota de crédito, 5 nota de débito, 7 retención."),
   }),
   outputSchema: SalidaSchema,
-  label: { start: ({ ruc, anio, mes }) => `Comprobantes recibidos · ${ruc} · ${anio}-${mes}` },
+  label: {
+    start: ({ ruc, anio, mes }) => `Comprobantes recibidos · ${ruc} · ${anio}-${mes}`,
+    complete: (_entrada, salida) => `${salida.filas.length} comprobantes descargados`,
+  },
   approval: (contexto) => mismoContribuyente(contexto) ?? "not-applicable",
   async execute({ ruc, anio, mes, tipoComprobante }, ctx) {
     return ejecutarScriptSri<Salida>(ctx, "descargar-comprobantes.mjs", ruc, {

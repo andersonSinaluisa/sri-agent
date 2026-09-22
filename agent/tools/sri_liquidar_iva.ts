@@ -5,6 +5,22 @@ import { diasHastaVencimiento, fechaLimiteIva } from "../lib/normativa/calendari
 
 const Centavos = z.number().int().min(0);
 
+const SalidaSchema = z.object({
+  periodo: z.object({ anio: z.number().int(), mes: z.number().int() }),
+  liquidacion: z.object({
+    factorProporcionalidad: z.number().int(),
+    creditoUsoComunAplicable: z.number().int(),
+    creditoDelPeriodo: z.number().int(),
+    ivaACargo: z.number().int(),
+    creditoAdquisicionesProximoPeriodo: z.number().int(),
+    retencionesAplicadas: z.number().int(),
+    creditoRetencionesProximoPeriodo: z.number().int(),
+    totalAPagar: z.number().int(),
+  }),
+  fechaLimite: z.string(),
+  diasRestantes: z.number().int(),
+});
+
 export default defineTool({
   description:
     "Liquida el IVA de un período y calcula la fecha límite de presentación. Cálculo determinista en centavos enteros: usá SIEMPRE esta tool en lugar de hacer la aritmética vos mismo.",
@@ -29,7 +45,13 @@ export default defineTool({
       retencionesRecibidas: Centavos,
     }),
   }),
-  label: { start: ({ ruc, anio, mes }) => `Liquidar IVA · ${ruc} · ${anio}-${mes}` },
+  outputSchema: SalidaSchema,
+  label: {
+    start: ({ ruc, anio, mes }) => `Liquidar IVA · ${ruc} · ${anio}-${mes}`,
+    complete: (_entrada, salida) =>
+      `IVA liquidado · a pagar USD ${(salida.liquidacion.totalAPagar / 100).toFixed(2)} · ` +
+      `vence ${salida.fechaLimite}`,
+  },
   execute({ ruc, anio, mes, periodicidad, feriados, insumos }) {
     const liquidacion = liquidarIva(insumos);
     const limite = fechaLimiteIva(ruc, { anio, mes }, periodicidad, feriados);

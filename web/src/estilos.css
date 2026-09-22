@@ -376,6 +376,81 @@ code {
   flex-wrap: wrap;
 }
 
+/* Actividad en vivo */
+.actividad {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: var(--panel);
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.paso {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--tenue);
+}
+
+.paso .texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paso .marca {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+}
+
+.paso-corriendo {
+  color: var(--texto);
+}
+
+/* El punto late mientras la llamada sigue abierta. */
+.paso-corriendo .marca::before {
+  content: "";
+  display: block;
+  width: 0.5em;
+  height: 0.5em;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: var(--acento);
+  animation: latido 1.1s ease-in-out infinite;
+}
+
+@keyframes latido {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paso-corriendo .marca::before {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.paso-hecho .marca {
+  color: #3fb950;
+}
+
+.paso-fallado {
+  color: var(--peligro);
+}
+
 /* Redactor */
 .redactor {
   display: flex;

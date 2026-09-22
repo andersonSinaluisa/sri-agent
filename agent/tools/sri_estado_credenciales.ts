@@ -11,7 +11,13 @@ export default defineTool({
     hayCredenciales: z.boolean(),
     variableEsperada: z.string(),
   }),
-  label: { start: () => "Revisar credenciales configuradas" },
+  label: {
+    start: () => "Revisar credenciales configuradas",
+    complete: (_entrada, salida) =>
+      salida.hayCredenciales
+        ? `Credenciales para ${salida.rucsConfigurados.length} RUC`
+        : "Sin credenciales configuradas",
+  },
   execute() {
     // Solo los nombres de RUC; los valores nunca salen de process.env.
     const rucs = rucsConfigurados();
