@@ -82,10 +82,14 @@ export async function ejecutar(nombre, paso) {
   await mkdir(DIR_SESIONES, { recursive: true });
   await mkdir(DIR_DESCARGAS, { recursive: true });
 
-  const navegador = await chromium.launch({
-    headless: true,
-    args: ["--disable-dev-shm-usage"],
-  });
+  // El sandbox de Chromium no puede funcionar como root, y el backend Docker
+  // de eve ejecuta con el usuario por defecto de la imagen (root).
+  const args = ["--disable-dev-shm-usage"];
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    args.push("--no-sandbox");
+  }
+
+  const navegador = await chromium.launch({ headless: true, args });
 
   const archivoSesion = rutaSesion(credenciales.ruc);
   const contexto = await navegador.newContext({

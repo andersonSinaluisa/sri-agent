@@ -14,7 +14,7 @@ Caddy (TLS)  →  eve start :3000  →  sandbox Docker  →  Chromium  →  SRI
 | SO | Linux glibc (Debian/Ubuntu) |
 | Node | 24.x |
 | Docker | daemon corriendo; el usuario del servicio en el grupo `docker` |
-| Disco | ~3 GB libres — la imagen base más Chromium pesan |
+| Disco | ~6 GB libres — la imagen oficial de Playwright pesa ~2 GB |
 | RAM | 2 GB mínimo; Chromium headless es el que manda |
 
 ## 1. Elegir backend de sandbox
@@ -107,9 +107,15 @@ curl https://sri.tu-dominio.com/eve/v1/health
 eve dev https://sri.tu-dominio.com     # TUI contra el agente desplegado
 ```
 
-La primera sesión construye el template del sandbox: instala Playwright y
-Chromium (~400 MB) y tarda varios minutos. Las siguientes lo reutilizan. Para
-forzar la reconstrucción, subí `VERSION_RUNTIME` en `agent/sandbox/sandbox.ts`.
+La primera sesión baja la imagen `mcr.microsoft.com/playwright` (~2 GB) y
+construye el template del sandbox; tarda varios minutos. Las siguientes lo
+reutilizan. Para forzar la reconstrucción, subí `VERSION_RUNTIME` en
+`agent/sandbox/sandbox.ts`.
+
+Se usa la imagen oficial de Playwright en vez de instalar Chromium sobre la
+imagen base de eve porque `playwright install --with-deps` aborta en cuanto la
+distro no está en su lista soportada (`does not support chromium on
+ubuntu26.04-x64`). La imagen ya trae el navegador y sus librerías.
 
 ## Estado durable — no lo pierdas
 

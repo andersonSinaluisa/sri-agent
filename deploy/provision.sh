@@ -77,7 +77,7 @@ fi
 docker info >/dev/null 2>&1 || error "El daemon de Docker no responde."
 
 LIBRE_KB="$(df -Pk / | awk 'NR==2 {print $4}')"
-[ "$LIBRE_KB" -gt 3145728 ] || aviso "Menos de 3 GB libres: la imagen base más Chromium pueden no entrar."
+[ "$LIBRE_KB" -gt 6291456 ] || aviso "Menos de 6 GB libres: la imagen de Playwright pesa ~2 GB y puede no entrar."
 
 # ── Backend de sandbox ──────────────────────────────────────────────────────
 if [ -e /dev/kvm ]; then

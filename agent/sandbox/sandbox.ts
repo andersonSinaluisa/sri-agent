@@ -54,28 +54,66 @@ const DOMINIOS_BOOTSTRAP = [
 ];
 
 /** Subí esta versión para forzar la reconstrucción del template. */
-const VERSION_RUNTIME = "playwright-chromium-v1";
+const VERSION_RUNTIME = "playwright-chromium-v2";
 
-/** Instala Chromium una sola vez por template; lo heredan todas las sesiones. */
-async function instalarPlaywright(sandbox: {
-  run: (o: { command: string }) => PromiseLike<{ exitCode: number; stdout: string; stderr: string }>;
-}): Promise<void> {
-  const instalar = await sandbox.run({
+/** El paquete npm y la imagen deben ser la misma versión de Playwright. */
+const VERSION_PLAYWRIGHT = "1.56.0";
+
+/**
+ * Imagen oficial de Playwright: trae Chromium y todas sus librerías de sistema
+ * ya instaladas. Evita `playwright install --with-deps`, que aborta en cuanto
+ * la distro base no está en su lista soportada — por ejemplo
+ * "does not support chromium on ubuntu26.04-x64".
+ */
+const IMAGEN_PLAYWRIGHT =
+  process.env.SRI_IMAGEN_SANDBOX ??
+  `mcr.microsoft.com/playwright:v${VERSION_PLAYWRIGHT}-noble`;
+
+interface SandboxMinimo {
+  run: (o: { command: string }) => PromiseLike<{
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+  }>;
+}
+
+function fallar(resultado: { exitCode: number; stdout: string; stderr: string }): never {
+  throw new Error(
+    `No se pudo preparar Playwright en el sandbox (exit ${resultado.exitCode}): ` +
+      `${resultado.stderr || resultado.stdout}`,
+  );
+}
+
+/** Para la imagen de Playwright: los navegadores ya están, falta el paquete npm. */
+async function instalarPaquete(sandbox: SandboxMinimo): Promise<void> {
+  const r = await sandbox.run({
     command: [
       "set -euo pipefail",
       "cd /workspace",
       '[ -f package.json ] || npm init -y >/dev/null',
-      "npm install --no-audit --no-fund playwright@1.56.0",
-      "npx --yes playwright install --with-deps chromium",
+      `npm install --no-audit --no-fund playwright@${VERSION_PLAYWRIGHT}`,
     ].join(" && "),
   });
+  if (r.exitCode !== 0) fallar(r);
+}
 
-  if (instalar.exitCode !== 0) {
-    throw new Error(
-      `No se pudo instalar Playwright en el sandbox (exit ${instalar.exitCode}): ` +
-        `${instalar.stderr || instalar.stdout}`,
-    );
-  }
+/**
+ * Para imágenes que no traen navegadores (microsandbox, vercel).
+ * `install-deps` va como best-effort: en una distro que Playwright no reconoce
+ * aborta, y la imagen base suele tener igual las librerías que Chromium pide.
+ */
+async function instalarCompleto(sandbox: SandboxMinimo): Promise<void> {
+  const r = await sandbox.run({
+    command: [
+      "set -euo pipefail",
+      "cd /workspace",
+      '[ -f package.json ] || npm init -y >/dev/null',
+      `npm install --no-audit --no-fund playwright@${VERSION_PLAYWRIGHT}`,
+      "(sudo npx --yes playwright install-deps chromium || true)",
+      "npx --yes playwright install chromium",
+    ].join(" && "),
+  });
+  if (r.exitCode !== 0) fallar(r);
 }
 
 const revalidationKey = () => `${VERSION_RUNTIME}-${BACKEND}`;
@@ -85,10 +123,10 @@ function definirDocker() {
     // El backend Docker no acepta opciones por sesión ni allow-lists por
     // dominio: su política queda fijada acá. El egress NO está restringido
     // por eve; restringilo en el firewall del host.
-    backend: docker({ networkPolicy: "allow-all" }),
+    backend: docker({ image: IMAGEN_PLAYWRIGHT, networkPolicy: "allow-all" }),
     revalidationKey,
     async bootstrap({ use }) {
-      await instalarPlaywright(await use());
+      await instalarPaquete(await use());
     },
   });
 }
@@ -103,7 +141,7 @@ function definirMicrosandbox() {
     }),
     revalidationKey,
     async bootstrap({ use }) {
-      await instalarPlaywright(await use());
+      await instalarCompleto(await use());
     },
     async onSession({ use }) {
       // El bootstrap ya terminó: se cierra el egress a solo el SRI.
@@ -120,7 +158,7 @@ function definirVercel() {
     }),
     revalidationKey,
     async bootstrap({ use }) {
-      await instalarPlaywright(await use());
+      await instalarCompleto(await use());
     },
     async onSession({ use }) {
       await use({ networkPolicy: { allow: DOMINIOS_SRI } });
