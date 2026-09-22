@@ -44,15 +44,19 @@ export const LOGIN = {
   mensajeError: "#input-error, .alert-error, .kc-feedback-text",
 };
 
+// Los ids de JSF llevan dos puntos, que en CSS son el inicio de una
+// pseudo-clase. Se usan selectores de atributo en vez de "#id" escapado:
+// un escape perdido produce "no es un selector valido", que es un error
+// confuso y facil de introducir al editar.
 export const COMPROBANTES = {
-  selectAnio: "#frmPrincipal\:ano",
-  selectMes: "#frmPrincipal\:mes",
-  selectDia: "#frmPrincipal\:dia",
-  selectTipoComprobante: "#frmPrincipal\:cmbTipoComprobante",
-  botonConsultar: "#frmPrincipal\:btnRecaptcha",
-  tablaResultados: "#frmPrincipal\:tablaCompRecibidos",
-  filasResultados: "#frmPrincipal\:tablaCompRecibidos tbody tr",
-  enlaceDescargarListado: "#frmPrincipal\:lnkTxtlistado",
+  selectAnio: '[id="frmPrincipal:ano"]',
+  selectMes: '[id="frmPrincipal:mes"]',
+  selectDia: '[id="frmPrincipal:dia"]',
+  selectTipoComprobante: '[id="frmPrincipal:cmbTipoComprobante"]',
+  botonConsultar: '[id="frmPrincipal:btnRecaptcha"]',
+  tablaResultados: '[id="frmPrincipal:tablaCompRecibidos"]',
+  filasResultados: '[id="frmPrincipal:tablaCompRecibidos"] tbody tr',
+  enlaceDescargarListado: '[id="frmPrincipal:lnkTxtlistado"]',
   mensajeSinResultados: "text=No se encontraron registros",
 };
 

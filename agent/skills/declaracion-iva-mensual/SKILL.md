@@ -70,5 +70,26 @@ recordá el crédito tributario que queda arrastrado al período siguiente.
 
 - No das asesoría tributaria ni interpretás normativa dudosa: eso lo decide el
   contador responsable. Cuando una regla no es clara, decilo y pedí la decisión.
-- Si el portal cambió y un selector falla, el error trae una captura de
-  diagnóstico. Reportá la ruta; no intentes rodear el problema a mano.
+## Cuando un selector falla
+
+El portal cambia de diseño sin avisar. Si un paso falla con "no se encontró el
+elemento", "timeout esperando el localizador" o "no es un selector válido",
+**no lo reportes como problema de red ni lo reintentes igual**. Entrá en modo
+exploración:
+
+1. `sri_inspeccionar_pantalla` con la URL del paso que falló. Te devuelve el
+   árbol de accesibilidad, los controles con sus atributos y una captura.
+2. Mirá qué hay realmente: puede que el campo haya cambiado de id, que la
+   pantalla se pinte en dos etapas, o que estés en otra pantalla (por ejemplo,
+   el portal te devolvió al login).
+3. Proponé el selector nuevo. Preferí, en este orden: `getByRole` con el nombre
+   accesible > `getByLabel` > id estable > CSS estructural. Nunca clases
+   autogeneradas.
+4. **Verificalo con `sri_validar_selector` antes de darlo por bueno.** Sirve
+   solo si resuelve exactamente 1 elemento. Si resuelve 0 o varios, probá otro.
+5. Reportá al usuario: qué clave de `selectores.mjs` hay que cambiar, por qué
+   valor, y qué verificación diste. Vos no editás el archivo; lo hace una
+   persona.
+
+Los ids de JSF llevan dos puntos. En CSS van como `[id="form:campo"]`, no como
+`#form:campo`, que el navegador lee como pseudo-clase e invalida el selector.
