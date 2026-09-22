@@ -1,0 +1,43 @@
+# /etc/systemd/system/sri-agent.service
+#
+#   sudo cp deploy/sri-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sri-agent
+#   journalctl -u sri-agent -f
+
+[Unit]
+Description=Agente SRI (eve)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=sri
+Group=sri
+
+# WorkingDirectory tiene que ser almacenamiento persistente: acá vive
+# .eve/.workflow-data, que guarda el estado de las sesiones durables. Si se
+# pierde, una declaración que quedó esperando aprobación se pierde con él.
+WorkingDirectory=/srv/sri-agent
+
+EnvironmentFile=/etc/sri-agent/env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+ExecStart=/usr/bin/npx eve start --host 127.0.0.1 --port 3000
+
+Restart=on-failure
+RestartSec=5
+
+# El proceso necesita el socket de Docker para crear los sandboxes.
+SupplementaryGroups=docker
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/srv/sri-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,8 @@
 node_modules
 .env*
+# Las plantillas SÍ se versionan: provision.sh las necesita en el checkout.
+!.env.example
+!.env.production.example
 .eve
 .vercel
 .next
@@ -8,3 +11,11 @@ node_modules
 dist
 .DS_Store
 *.tsbuildinfo
+
+.env
+
+# Build anterior que guarda deploy.sh para poder hacer rollback.
+.output.anterior
+
+# Capturas, descargas y borradores del modo de ejecucion local.
+.sri-datos

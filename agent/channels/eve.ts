@@ -1,15 +1,29 @@
 import { eveChannel } from "eve/channels/eve";
-import { localDev, placeholderAuth, vercelOidc } from "eve/channels/auth";
+import { httpBasic, localDev, type AuthFn } from "eve/channels/auth";
+
+/**
+ * Acceso de operador por HTTP Basic. Es lo mínimo razonable para un agente que
+ * opera declaraciones tributarias: sin estas variables el canal no acepta a
+ * nadie en producción, porque eve falla cerrado.
+ *
+ * Si el día de mañana hay una app con usuarios, poné ese autenticador primero
+ * en el arreglo y dejá este como acceso de servicio.
+ *
+ * `vercelOidc()` se quitó a propósito: fuera de Vercel no hay emisor de esos
+ * tokens y mantenerlo solo agranda la superficie.
+ */
+function operador(): AuthFn<Request>[] {
+  const username = process.env.SRI_AGENTE_USUARIO;
+  const password = process.env.SRI_AGENTE_CLAVE;
+  if (!username || !password) return [];
+  return [httpBasic({ username, password }, { realm: "sri-agent" })];
+}
 
 export default eveChannel({
   auth: [
-    // Lets the eve TUI and your Vercel deployments reach the deployed agent.
-    vercelOidc(),
-    // Open on localhost for `eve dev` and the REPL; ignored in production.
+    ...operador(),
+    // Solo acepta mientras el proceso es un servidor `eve dev`; en producción
+    // no acepta nada.
     localDev(),
-    // This placeholder will not allow browser requests in production.
-    // Replace it with your app's auth provider, like Auth.js or Clerk,
-    // or use none() for a public demo.
-    placeholderAuth(),
   ],
 });

@@ -1,0 +1,12 @@
+# Los DOS prefijos tienen que llegar al agente sin reescribir la ruta.
+# Un proxy que solo pasa /eve/ deja arrancar una sesión, pero el run se cuelga
+# cuando el callback de workflow no puede volver.
+
+sri.tu-dominio.com {
+    encode gzip
+
+    # El stream de sesión es SSE: sin buffering y sin timeout corto.
+    reverse_proxy 127.0.0.1:3000 {
+        flush_interval -1
+    }
+}

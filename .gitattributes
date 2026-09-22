@@ -1,0 +1,6 @@
+# Los scripts se editan en Windows y se ejecutan en Linux. Un CRLF en el
+# shebang rompe el script con "bad interpreter: /usr/bin/env bash^M".
+*.sh text eol=lf
+*.mjs text eol=lf
+deploy/Caddyfile text eol=lf
+deploy/*.service text eol=lf

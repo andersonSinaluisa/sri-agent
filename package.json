@@ -12,7 +12,10 @@
     "dev": "eve dev",
     "eval": "eve eval",
     "start": "eve start",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test:calculo": "node --experimental-strip-types evals/calculo.smoke.mts",
+    "sri:setup": "playwright install chromium",
+    "sri:check": "node agent/sandbox/workspace/sri/verificar-entorno.mjs"
   },
   "dependencies": {
     "@vercel/connect": "2.2.0",
@@ -22,10 +25,10 @@
   },
   "devDependencies": {
     "@types/node": "24.x",
+    "playwright": "1.56.0",
     "typescript": "7.0.2"
   },
   "engines": {
     "node": "24.x"
   }
-
 }
