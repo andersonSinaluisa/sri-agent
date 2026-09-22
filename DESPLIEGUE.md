@@ -100,7 +100,72 @@ prefijos sin reescribir la ruta**:
 Un proxy restringido a `/eve/` deja arrancar la sesión, pero el run se cuelga
 cuando el callback no puede volver.
 
-## 5. Verificar
+## 5. Acceder desde fuera
+
+El servicio escucha solo en `127.0.0.1:3000`: no esta expuesto. Elegi una opcion.
+
+### A. Dominio + reverse proxy (produccion)
+
+Necesitas un registro **A** del dominio apuntando a la IP del VPS, y los
+puertos abiertos:
+
+```sh
+ufw allow 80/tcp && ufw allow 443/tcp
+```
+
+**Con nginx** (hay configuracion lista en `deploy/`):
+
+```sh
+cp /srv/sri-agent/deploy/nginx-proxy.conf /etc/nginx/sri-agent-proxy.conf
+cp /srv/sri-agent/deploy/nginx.conf /etc/nginx/sites-available/sri-agent
+sed -i "s/sri.tu-dominio.com/TU-DOMINIO-REAL/" /etc/nginx/sites-available/sri-agent
+ln -sf /etc/nginx/sites-available/sri-agent /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+
+apt install -y certbot python3-certbot-nginx
+certbot --nginx -d TU-DOMINIO-REAL
+```
+
+certbot agrega el bloque 443 y el redirect desde el 80 por su cuenta.
+
+Dos cosas que rompen esto en nginx y cuestan horas de diagnosticar:
+
+- **`proxy_pass` sin barra final.** `proxy_pass http://127.0.0.1:3000;` pasa la
+  URL intacta. Si le agregas `/` al final, nginx reemplaza el prefijo del
+  location y el agente recibe otra ruta.
+- **`proxy_buffering off`.** El stream de sesion es SSE. Con el buffering por
+  defecto los eventos se acumulan en nginx y la UI se queda esperando para
+  siempre. Esta en `nginx-proxy.conf` junto con los timeouts largos.
+
+**Con Caddy**, si preferis, esta `deploy/Caddyfile`; hace lo mismo y saca el
+certificado solo.
+
+### B. Tunel SSH (sin dominio, y mas seguro)
+
+Nada queda expuesto a internet. Desde tu Windows:
+
+```sh
+ssh -L 3000:127.0.0.1:3000 root@IP-DEL-VPS
+```
+
+Con el tunel abierto, levanta la UI local apuntando al VPS:
+
+```sh
+EVE_TARGET=http://127.0.0.1:3000 npm run web:dev
+```
+
+y entra a `http://localhost:5173`. Para un solo operador es la mejor opcion:
+sin dominio, sin certificados y sin superficie de ataque publica.
+
+### C. IP publica sin dominio
+
+**No lo hagas por HTTP plano.** HTTP Basic manda usuario y clave en base64, que
+es texto legible: cualquiera en el camino se queda con las credenciales que
+autorizan presentar declaraciones. Sin dominio no hay certificado valido, asi
+que o usas la opcion B, o conseguis un dominio (los hay gratis) y usas la A.
+
+## 6. Verificar
 
 ```sh
 curl https://sri.tu-dominio.com/eve/v1/health
