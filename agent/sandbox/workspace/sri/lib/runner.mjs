@@ -32,6 +32,26 @@ export function log(...partes) {
   process.stderr.write(`${partes.join(" ")}\n`);
 }
 
+/**
+ * Chromium headless se anuncia como "HeadlessChrome/141.0.7390.37", y el
+ * portal del SRI filtra por User-Agent: con el de curl no contesta nada y con
+ * uno de Chrome devuelve 200 en 150ms. Se reemplaza por el de un Chrome
+ * normal, conservando la version real del binario para no mentir sobre las
+ * capacidades del motor, que son las mismas.
+ */
+function userAgentDeNavegador(navegador) {
+  const plataforma =
+    process.platform === "win32"
+      ? "Windows NT 10.0; Win64; x64"
+      : process.platform === "darwin"
+        ? "Macintosh; Intel Mac OS X 10_15_7"
+        : "X11; Linux x86_64";
+  return (
+    `Mozilla/5.0 (${plataforma}) AppleWebKit/537.36 (KHTML, like Gecko) ` +
+    `Chrome/${navegador.version()} Safari/537.36`
+  );
+}
+
 function leerEntrada() {
   const crudo = process.argv[2];
   if (crudo === undefined || crudo === "") return {};
@@ -95,6 +115,7 @@ export async function ejecutar(nombre, paso) {
   const archivoSesion = rutaSesion(credenciales.ruc);
   const contexto = await navegador.newContext({
     storageState: existsSync(archivoSesion) ? archivoSesion : undefined,
+    userAgent: userAgentDeNavegador(navegador),
     locale: "es-EC",
     timezoneId: "America/Guayaquil",
     acceptDownloads: true,
