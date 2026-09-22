@@ -1,0 +1,38 @@
+# /etc/systemd/system/sri-proxy-relay.service
+#
+# Expone a los contenedores el proxy SOCKS que el túnel SSH deja en el
+# loopback del VPS. Sin esto hay que levantar socat a mano después de cada
+# reinicio, y el agente falla con un timeout que no dice por qué.
+#
+#   sudo cp deploy/sri-proxy-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sri-proxy-relay
+#
+# Escucha SOLO en la interfaz de Docker: no queda expuesto a internet. Un
+# proxy SOCKS abierto en la interfaz pública lo encuentran y lo usan en horas.
+#
+# Esto NO levanta el túnel SSH. El túnel sale de la máquina en Ecuador
+# (`ssh -N -R 1080 root@VPS`); si se cae, este relé queda apuntando a un
+# puerto muerto. Del otro lado, `autossh` lo mantiene abierto.
+
+[Unit]
+Description=Relé del proxy SOCKS hacia los contenedores del sandbox
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:1080,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:1080
+
+# El túnel puede no estar arriba todavía: se reintenta sin rendirse.
+Restart=always
+RestartSec=5
+
+DynamicUser=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

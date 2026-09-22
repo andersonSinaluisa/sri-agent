@@ -182,23 +182,64 @@ Dos salidas.
 
 ### Tunel SSH con salida en Ecuador (sin costo)
 
-Desde una maquina en Ecuador, un solo comando abre un proxy SOCKS **en el VPS**
-que sale por la conexion de esa maquina:
+Un comando desde una maquina en Ecuador abre un proxy SOCKS **en el VPS** que
+sale por la conexion de esa maquina.
+
+**Ojo con la direccion.** Chromium corre dentro de un contenedor Docker, donde
+`127.0.0.1` es el contenedor, no el VPS. El tunel tiene que escuchar en la
+puerta de enlace de Docker, y sshd tiene que permitir que el cliente elija esa
+direccion.
 
 ```sh
-ssh -N -R 1080 root@IP-DEL-VPS
+# 1) En el VPS, una sola vez
+ip -4 addr show docker0 | grep inet        # confirma la IP, normalmente 172.17.0.1
+echo 'GatewayPorts clientspecified' >> /etc/ssh/sshd_config
+systemctl reload ssh
+
+# 2) Desde la maquina en Ecuador, cada vez que se opere
+ssh -N -R 172.17.0.1:1080 root@IP-DEL-VPS
 ```
 
-Y en `/etc/sri-agent/env`:
+`clientspecified` y no `yes`: con `yes` el proxy SOCKS quedaria escuchando en
+todas las interfaces, incluida la publica, y un SOCKS abierto en internet lo
+encuentran y lo usan en horas.
+
+Comprobalo antes de tocar el agente, desde el VPS:
 
 ```sh
-SRI_PROXY=socks5://127.0.0.1:1080
+curl -4 --socks5-hostname 172.17.0.1:1080 -sS -o /dev/null   -w '%{http_code} %{time_total}
+' --max-time 30   -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'   https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT
 ```
 
-El navegador sale por ahi; el resto del agente sigue saliendo directo. La pega
-es que el tunel tiene que estar levantado cuando el agente opera: para un cierre
-mensual alcanza, para schedules automaticos no. Con `autossh` o una unidad de
-systemd en la maquina de Ecuador queda permanente.
+`--socks5-hostname` y no `--socks5`: resuelve el DNS del lado de Ecuador.
+
+Recien entonces, en `/etc/sri-agent/env`:
+
+```sh
+SRI_PROXY=socks5://172.17.0.1:1080
+```
+
+Con `SRI_EJECUCION=local` el navegador corre en el runtime y no en el
+contenedor: ahi si va `127.0.0.1` y el tunel se abre sin `GatewayPorts`.
+
+Si `GatewayPorts` da pelea —en Ubuntu el `Include` de `sshd_config.d` va al
+principio y gana el primer valor, asi que una linea agregada al final del
+archivo pierde—, el atajo es dejar el tunel en `127.0.0.1` y exponerlo a los
+contenedores con un rele:
+
+```sh
+apt install -y socat
+cp /srv/sri-agent/deploy/sri-proxy-relay.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now sri-proxy-relay
+```
+
+Escucha solo en la interfaz de Docker, igual que `clientspecified`, sin tocar
+sshd.
+
+**Las dos piezas tienen que estar arriba cuando el agente opera.** El rele lo
+maneja systemd; el tunel sale de la maquina en Ecuador y se cae con ella. Para
+un cierre mensual que haces vos alcanza. Para schedules automaticos, `autossh`
+del lado de Ecuador, o mover la parte del portal a una maquina ecuatoriana.
 
 ### Correr la parte del portal en Ecuador
 
