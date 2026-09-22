@@ -2,6 +2,7 @@ import { defineTool, toolOutput, toolOutputPart } from "eve/tools";
 import { z } from "zod";
 import { ejecutarScriptSri, leerBinarioSandbox } from "../lib/sri/ejecutar.js";
 import { mismoContribuyente } from "../lib/sri/politicas.js";
+import { enviarCapturasAlModelo } from "../lib/sri/capturas.js";
 
 export default defineTool({
   description:
@@ -38,7 +39,7 @@ export default defineTool({
           "Revisá que la captura coincida con los valores aprobados antes de presentar.",
       ),
     ];
-    if (salida.capturaBase64 !== null) {
+    if (salida.capturaBase64 !== null && enviarCapturasAlModelo()) {
       partes.push(toolOutputPart.file(salida.capturaBase64, { mediaType: "image/png" }));
     }
     return toolOutput.content(partes);

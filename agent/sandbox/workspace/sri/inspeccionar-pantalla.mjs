@@ -28,7 +28,9 @@ await ejecutar("inspeccionar-pantalla", async ({ page, entrada, credenciales, gu
     "inspeccion",
     `${new Date().toISOString().replace(/[:.]/g, "-")}.png`,
   );
-  await page.screenshot({ path: captura, fullPage: true });
+  // Viewport y no fullPage: una pantalla del SRI completa son varios MB, y
+  // lo que sirve para ubicar un control esta arriba.
+  await page.screenshot({ path: captura });
 
   return {
     url: page.url(),

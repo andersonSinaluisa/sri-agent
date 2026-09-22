@@ -2,6 +2,7 @@ import { defineTool, toolOutput, toolOutputPart } from "eve/tools";
 import { z } from "zod";
 import { ejecutarScriptSri, leerBinarioSandbox } from "../lib/sri/ejecutar.js";
 import { mismoContribuyente } from "../lib/sri/politicas.js";
+import { enviarCapturasAlModelo } from "../lib/sri/capturas.js";
 
 const ControlSchema = z.object({
   etiqueta: z.string(),
@@ -67,7 +68,9 @@ export default defineTool({
           '[id="form:campo"] en vez de "#form\\:campo".',
       ),
     ];
-    if (salida.capturaBase64 !== null) {
+    // La captura solo va al modelo si esta habilitado; la UI la muestra igual
+    // porque recibe la salida completa en action.result.
+    if (salida.capturaBase64 !== null && enviarCapturasAlModelo()) {
       partes.push(toolOutputPart.file(salida.capturaBase64, { mediaType: "image/png" }));
     }
     return toolOutput.content(partes);
