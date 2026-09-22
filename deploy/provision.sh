@@ -16,6 +16,19 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 aviso() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
 error() { printf '\033[1;31mxx\033[0m  %s\n' "$*" >&2; exit 1; }
 
+# Sin esto, un comando que falle bajo `set -e` mata el script sin imprimir
+# nada y te deja adivinando dónde se cortó.
+al_fallar() {
+  local codigo=$?
+  error "Falló en la línea $1 (código $codigo)."
+}
+trap 'al_fallar $LINENO' ERR
+
+# Sin esto, cualquier comando que falle bajo `set -e` mata el script sin
+# imprimir nada.
+trap 'codigo=$?; printf "[1;31mxx[0m  Falló en la línea %s (código %s).
+" "$LINENO" "$codigo" >&2' ERR
+
 [ "$(id -u)" -eq 0 ] || error "Corré este script como root (sudo)."
 [ -n "$REPO" ] || error "Uso: sudo bash deploy/provision.sh <url-del-repo>"
 

@@ -25,6 +25,14 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 aviso() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
 error() { printf '\033[1;31mxx\033[0m  %s\n' "$*" >&2; exit 1; }
 
+# Sin esto, un comando que falle bajo `set -e` mata el script sin imprimir
+# nada y te deja adivinando dónde se cortó.
+al_fallar() {
+  local codigo=$?
+  error "Falló en la línea $1 (código $codigo)."
+}
+trap 'al_fallar $LINENO' ERR
+
 SKIP_PULL=0
 ROLLBACK=0
 for arg in "$@"; do
@@ -81,17 +89,28 @@ info "Comprobando requisitos."
 [ -f "$ARCHIVO_ENV" ] || error "Falta $ARCHIVO_ENV."
 docker info >/dev/null 2>&1 || error "El daemon de Docker no responde."
 
-# Se comprueba que las variables estén definidas, sin imprimir sus valores.
+# El archivo se LEE, no se sourcea. systemd lo parsea con su propio formato,
+# que admite valores con espacios y símbolos; pasarlos por el shell podía
+# abortar el script en silencio y, peor, ejecutar lo que hubiera adentro.
+valor_de() {
+  local linea v
+  linea="$(grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ARCHIVO_ENV" | tail -n 1 || true)"
+  [ -n "$linea" ] || return 0
+  v="${linea#*=}"
+  v="${v%\"}"; v="${v#\"}"
+  v="${v%'}"; v="${v#'}"
+  printf '%s' "$v"
+}
+
 faltantes=""
 for clave in AI_GATEWAY_API_KEY SRI_AGENTE_USUARIO SRI_AGENTE_CLAVE; do
-  valor="$(set -a; . "$ARCHIVO_ENV" >/dev/null 2>&1; set +a; eval "printf '%s' \"\${$clave:-}\"")"
-  [ -n "$valor" ] || faltantes="$faltantes $clave"
+  [ -n "$(valor_de "$clave")" ] || faltantes="$faltantes $clave"
 done
 if [ -n "$faltantes" ]; then
   error "Sin valor en $ARCHIVO_ENV:$faltantes"
 fi
 
-if ! (set -a; . "$ARCHIVO_ENV" >/dev/null 2>&1; set +a; env | grep -q '^SRI_CRED_'); then
+if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?SRI_CRED_[0-9]{13}=.+' "$ARCHIVO_ENV"; then
   aviso "No hay ninguna credencial SRI_CRED_<RUC>: el agente no podrá entrar al portal."
 fi
 
