@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useEveAgent, type EveMessagePart } from "eve/react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Credenciales {
   readonly usuario: string;
@@ -178,8 +180,23 @@ function extraerCaptura(salida: unknown): string | null {
   return typeof captura === "string" && captura.length > 0 ? captura : null;
 }
 
+/**
+ * El agente responde en markdown: tablas de casilleros, listas de hallazgos,
+ * montos en negrita. Sin esto se leen los pipes y los asteriscos crudos.
+ *
+ * react-markdown no renderiza HTML embebido salvo que se lo pida, así que el
+ * texto del modelo no puede inyectar marcado en la página.
+ */
+function TextoMarkdown({ texto }: { texto: string }) {
+  return (
+    <div className="markdown">
+      <Markdown remarkPlugins={[remarkGfm]}>{texto}</Markdown>
+    </div>
+  );
+}
+
 function Parte({ parte }: { parte: EveMessagePart }) {
-  if (parte.type === "text") return <p>{parte.text}</p>;
+  if (parte.type === "text") return <TextoMarkdown texto={parte.text} />;
 
   if (parte.type === "dynamic-tool") {
     const captura = parte.state === "output-available" ? extraerCaptura(parte.output) : null;
@@ -244,7 +261,7 @@ function Aprobacion({
         </p>
       ) : null}
 
-      {solicitud.prompt ? <p>{solicitud.prompt}</p> : null}
+      {solicitud.prompt ? <TextoMarkdown texto={solicitud.prompt} /> : null}
 
       {solicitud.kind === "question" && solicitud.allowFreeform ? (
         <form

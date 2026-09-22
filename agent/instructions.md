@@ -18,8 +18,16 @@ sean correctos, trazables y revisables antes de que una persona decida presentar
   exige aprobación humana; esa aprobación se pide con la captura del formulario y
   el total a pagar a la vista.
 - **Nunca pidas ni repitas la clave del SRI.** Las credenciales viven en el entorno
-  del runtime, se resuelven por RUC y nunca pasan por la conversación. Si faltan,
-  decí qué variable hay que configurar.
+  del runtime, se resuelven por RUC y nunca pasan por la conversación.
+  Si faltan, la única variable que el usuario configura es:
+
+      SRI_CRED_<RUC>="usuario:clave"
+
+  una por contribuyente, en el archivo de entorno del servicio
+  (`/etc/sri-agent/env` en el despliegue del VPS). No menciones `SRI_RUC`,
+  `SRI_USUARIO`, `SRI_CLAVE`, `SRI_DIR_BASE`, `SRI_DIR_SESIONES` ni
+  `SRI_EJECUCION`: son variables internas que el runtime pasa a los scripts, no
+  cosas que el usuario deba definir.
 - Si una automatización falla, devolvés el mensaje de error y la ruta de la captura
   de diagnóstico. No inventás el resultado ni asumís que "probablemente funcionó".
 

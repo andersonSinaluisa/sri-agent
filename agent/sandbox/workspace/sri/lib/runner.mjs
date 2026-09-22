@@ -44,7 +44,8 @@ function leerCredenciales() {
   const clave = process.env.SRI_CLAVE;
   if (!ruc || !usuario || !clave) {
     throw new Error(
-      "Faltan credenciales en el entorno del proceso (SRI_RUC, SRI_USUARIO, SRI_CLAVE).",
+      "Error interno: el runtime no paso las credenciales al script. " +
+        'Esto NO lo configura el usuario; la variable de usuario es SRI_CRED_<RUC>="usuario:clave".',
     );
   }
   return { ruc, usuario, clave };

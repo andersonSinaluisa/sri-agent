@@ -96,7 +96,11 @@ if ! id -u "$USUARIO" >/dev/null 2>&1; then
 fi
 usermod -aG docker "$USUARIO"
 
-install -d -o "$USUARIO" -g "$USUARIO" -m 750 "$DESTINO"
+# 751 y no 750: el reverse proxy corre como www-data y necesita ATRAVESAR
+# este directorio para llegar a web/dist. La x sin la r deja pasar pero no
+# listar el contenido. Con 750, nginx falla con "13: Permission denied" al
+# hacer stat() de index.html y entra en bucle de redireccion interna.
+install -d -o "$USUARIO" -g "$USUARIO" -m 751 "$DESTINO"
 install -d -o root -g "$USUARIO" -m 750 "$DIR_ENV"
 
 # ── Código ──────────────────────────────────────────────────────────────────

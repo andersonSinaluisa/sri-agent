@@ -187,12 +187,116 @@ code {
 
 .mensaje p {
   margin: 0 0 0.5rem;
-  white-space: pre-wrap;
   line-height: 1.55;
 }
 
 .mensaje p:last-child {
   margin-bottom: 0;
+}
+
+/* Markdown de las respuestas del agente */
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin: 1.1rem 0 0.5rem;
+  line-height: 1.3;
+}
+
+.markdown h1 {
+  font-size: 1.15rem;
+}
+
+.markdown h2 {
+  font-size: 1.05rem;
+}
+
+.markdown h3 {
+  font-size: 0.97rem;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 0.6rem;
+  padding-left: 1.3rem;
+  line-height: 1.7;
+}
+
+.markdown li + li {
+  margin-top: 0.2rem;
+}
+
+.markdown code {
+  background: color-mix(in srgb, var(--texto) 10%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+
+.markdown pre {
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 0.8rem;
+  overflow-x: auto;
+  margin: 0 0 0.7rem;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Las tablas de casilleros son lo que más se rompe sin estilos. */
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--borde);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.markdown th {
+  background: color-mix(in srgb, var(--texto) 7%, transparent);
+  font-weight: 600;
+}
+
+/* Montos y cantidades: alineados a la derecha se comparan de un vistazo. */
+.markdown td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown blockquote {
+  margin: 0 0 0.7rem;
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--borde);
+  color: var(--tenue);
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--borde);
+  margin: 1rem 0;
+}
+
+.markdown a {
+  color: var(--acento);
 }
 
 .herramienta {
