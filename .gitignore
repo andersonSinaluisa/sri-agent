@@ -23,3 +23,6 @@ dist
 
 # Cache de npm del usuario de servicio (su HOME es el directorio de la app).
 .npm
+
+# Build de la UI.
+web/dist

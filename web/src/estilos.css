@@ -1,0 +1,288 @@
+:root {
+  --fondo: #0f1115;
+  --panel: #171a21;
+  --borde: #262b36;
+  --texto: #e6e8ee;
+  --tenue: #9aa3b2;
+  --acento: #4c8dff;
+  --peligro: #e5484d;
+  --aviso: #3a2a12;
+  --aviso-borde: #7a5418;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --fondo: #f6f7f9;
+    --panel: #ffffff;
+    --borde: #dfe3ea;
+    --texto: #12141a;
+    --tenue: #5c6472;
+    --aviso: #fff5e0;
+    --aviso-borde: #e0b558;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--borde);
+  background: var(--panel);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--acento);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.peligro {
+  background: var(--peligro);
+  border-color: var(--peligro);
+  color: #fff;
+}
+
+button.enlace {
+  border: none;
+  background: none;
+  color: var(--tenue);
+  padding: 0;
+}
+
+input {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--borde);
+  background: var(--fondo);
+  color: var(--texto);
+  width: 100%;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.tenue {
+  color: var(--tenue);
+}
+
+/* Ingreso */
+.ingreso {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.ingreso form {
+  width: min(360px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  padding: 1.5rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.ingreso h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.ingreso label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+/* Marco */
+.marco {
+  max-width: 820px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+}
+
+.marco > header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--borde);
+}
+
+.marco > header .estado {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--tenue);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+
+.estado-streaming,
+.estado-submitted {
+  color: var(--acento);
+  border-color: var(--acento);
+}
+
+.estado-error {
+  color: var(--peligro);
+  border-color: var(--peligro);
+}
+
+.error {
+  background: rgba(229, 72, 77, 0.12);
+  border: 1px solid var(--peligro);
+  border-radius: 8px;
+  padding: 0.7rem;
+  font-size: 0.9rem;
+}
+
+/* Conversación */
+.conversacion {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 0;
+  overflow-y: auto;
+}
+
+.mensaje {
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--borde);
+  background: var(--panel);
+}
+
+.mensaje.user {
+  background: color-mix(in srgb, var(--acento) 14%, var(--panel));
+  margin-left: auto;
+  max-width: 85%;
+}
+
+.mensaje p {
+  margin: 0 0 0.5rem;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.mensaje p:last-child {
+  margin-bottom: 0;
+}
+
+.herramienta {
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+.herramienta figure {
+  margin: 0.6rem 0 0;
+}
+
+.herramienta img {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--borde);
+}
+
+.herramienta figcaption {
+  font-size: 0.8rem;
+  padding-top: 0.35rem;
+}
+
+.bienvenida {
+  color: var(--tenue);
+  font-size: 0.9rem;
+}
+
+.bienvenida ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.8;
+}
+
+/* Solicitudes HITL */
+.solicitud {
+  border: 1px solid var(--acento);
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--panel);
+}
+
+.solicitud.irreversible {
+  border-color: var(--peligro);
+}
+
+.solicitud h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.solicitud p {
+  margin: 0 0 0.75rem;
+  line-height: 1.55;
+}
+
+.alerta {
+  background: var(--aviso);
+  border: 1px solid var(--aviso-borde);
+  border-radius: 8px;
+  padding: 0.7rem;
+  font-size: 0.9rem;
+}
+
+.solicitud form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.opciones {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Redactor */
+.redactor {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem 0 1.5rem;
+  border-top: 1px solid var(--borde);
+  position: sticky;
+  bottom: 0;
+  background: var(--fondo);
+}
+
+.redactor button {
+  flex-shrink: 0;
+}

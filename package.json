@@ -15,20 +15,31 @@
     "typecheck": "tsc",
     "test:calculo": "node --experimental-strip-types evals/calculo.smoke.mts",
     "sri:setup": "playwright install chromium",
-    "sri:check": "node agent/sandbox/workspace/sri/verificar-entorno.mjs"
+    "sri:check": "node agent/sandbox/workspace/sri/verificar-entorno.mjs",
+    "web:dev": "vite",
+    "web:build": "vite build"
   },
   "dependencies": {
     "@vercel/connect": "2.2.0",
     "ai": "^7.0.105",
     "eve": "^0.63.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "24.x",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "playwright": "1.56.0",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "^7.3.6"
   },
   "engines": {
     "node": "24.x"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }

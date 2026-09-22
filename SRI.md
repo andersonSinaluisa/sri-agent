@@ -106,6 +106,27 @@ Después, extremo a extremo contra el ambiente de pruebas:
 - No da asesoría tributaria.
 - No reintenta un login fallido: el SRI bloquea la cuenta tras varios intentos.
 
+## UI web
+
+Una SPA de React en `web/` que habla con el agente por su canal HTTP.
+
+```sh
+npm run dev        # el agente, en :2000
+npm run web:dev    # la UI, en :5173 (proxea /eve al agente)
+```
+
+En produccion, Caddy sirve `web/dist` y el agente en el MISMO origen, asi que
+no hay CORS y la UI usa rutas relativas. `deploy.sh` compila las dos cosas.
+
+Lo que la UI aporta sobre la TUI:
+
+- **Aprobaciones con la captura a la vista.** Cuando el agente pide aprobar
+  `sri_presentar_104`, la UI muestra la captura del formulario 104 lleno junto
+  al boton, y marca la accion como irreversible en rojo. Aprobar a ciegas es el
+  riesgo real de este flujo.
+- Autenticacion HTTP Basic con las credenciales del agente, guardadas en
+  `sessionStorage` (se borran al cerrar la pestana), nunca en `localStorage`.
+
 ## Despliegue
 
 Ver [DESPLIEGUE.md](DESPLIEGUE.md).

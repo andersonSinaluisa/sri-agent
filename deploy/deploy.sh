@@ -188,7 +188,14 @@ info "Guardando el build anterior para poder volver."
 rm -rf "$PREVIA"
 [ -d "$SALIDA" ] && cp -a "$SALIDA" "$PREVIA"
 
-info "Compilando."
+info "Compilando la UI."
+if ! como_servicio "$NPM_BIN" run web:build; then
+  aviso "El build de la UI fallo."
+  restaurar_anterior
+  exit 1
+fi
+
+info "Compilando el agente."
 if ! como_servicio "$NPM_BIN" run build; then
   aviso "El build falló."
   restaurar_anterior
