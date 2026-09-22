@@ -33,6 +33,34 @@ export function log(...partes) {
 }
 
 /**
+ * Salida del navegador a traves de un proxy, cuando el host desde donde corre
+ * el agente no alcanza al SRI. Se configura con SRI_PROXY:
+ *
+ *   socks5://127.0.0.1:1080        tunel SSH con salida en Ecuador
+ *   http://usuario:clave@host:3128 proxy HTTP con autenticacion
+ *
+ * Sin la variable, el navegador sale directo.
+ */
+function proxyConfigurado() {
+  const crudo = process.env.SRI_PROXY;
+  if (crudo === undefined || crudo.trim() === "") return {};
+
+  const url = new URL(crudo);
+  const server = `${url.protocol}//${url.host}`;
+  log(`Navegador saliendo por proxy ${server}`);
+
+  return {
+    proxy: {
+      server,
+      // SOCKS5 con autenticacion no esta soportado por Chromium; usa un
+      // tunel sin credenciales o un proxy HTTP si necesitas autenticar.
+      ...(url.username === "" ? {} : { username: decodeURIComponent(url.username) }),
+      ...(url.password === "" ? {} : { password: decodeURIComponent(url.password) }),
+    },
+  };
+}
+
+/**
  * Chromium headless se anuncia como "HeadlessChrome/141.0.7390.37", y el
  * portal del SRI filtra por User-Agent: con el de curl no contesta nada y con
  * uno de Chrome devuelve 200 en 150ms. Se reemplaza por el de un Chrome
@@ -116,6 +144,7 @@ export async function ejecutar(nombre, paso) {
   const contexto = await navegador.newContext({
     storageState: existsSync(archivoSesion) ? archivoSesion : undefined,
     userAgent: userAgentDeNavegador(navegador),
+    ...proxyConfigurado(),
     locale: "es-EC",
     timezoneId: "America/Guayaquil",
     acceptDownloads: true,

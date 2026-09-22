@@ -126,10 +126,14 @@ export async function ejecutarScriptSri<T>(
 ): Promise<T> {
   const credenciales = resolverCredenciales(ruc);
   const cargaUtil = Buffer.from(JSON.stringify(entrada), "utf8").toString("base64");
+  // El sandbox recibe un entorno explicito, no hereda el del runtime: si el
+  // proxy no se pasa acá, el navegador sale directo y vuelve a fallar.
+  const proxy = process.env.SRI_PROXY;
   const env = {
     SRI_RUC: credenciales.ruc,
     SRI_USUARIO: credenciales.usuario,
     SRI_CLAVE: credenciales.clave,
+    ...(proxy === undefined || proxy === "" ? {} : { SRI_PROXY: proxy }),
   };
 
   const resultado =

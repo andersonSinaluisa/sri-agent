@@ -165,6 +165,46 @@ es texto legible: cualquiera en el camino se queda con las credenciales que
 autorizan presentar declaraciones. Sin dominio no hay certificado valido, asi
 que o usas la opcion B, o conseguis un dominio (los hay gratis) y usas la A.
 
+## 5.bis. Si el VPS no alcanza al SRI
+
+Comprobalo primero, desde el VPS:
+
+```sh
+curl -4 -sS -o /dev/null -w '%{http_code} %{time_total}
+' --max-time 20   -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'   https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT
+```
+
+Si responde `200`, no necesitas nada de esta seccion. Si se cuelga o devuelve
+un reset, y desde una maquina en Ecuador el mismo comando SI responde, es la IP
+del VPS: el SRI la filtra. No hay ajuste de red que lo arregle.
+
+Dos salidas.
+
+### Tunel SSH con salida en Ecuador (sin costo)
+
+Desde una maquina en Ecuador, un solo comando abre un proxy SOCKS **en el VPS**
+que sale por la conexion de esa maquina:
+
+```sh
+ssh -N -R 1080 root@IP-DEL-VPS
+```
+
+Y en `/etc/sri-agent/env`:
+
+```sh
+SRI_PROXY=socks5://127.0.0.1:1080
+```
+
+El navegador sale por ahi; el resto del agente sigue saliendo directo. La pega
+es que el tunel tiene que estar levantado cuando el agente opera: para un cierre
+mensual alcanza, para schedules automaticos no. Con `autossh` o una unidad de
+systemd en la maquina de Ecuador queda permanente.
+
+### Correr la parte del portal en Ecuador
+
+`SRI_EJECUCION=local` en una maquina ecuatoriana. Es el modo que ya esta
+verificado: el probe devolvio 200 en 4.2s con el titulo real del portal.
+
 ## 6. Verificar
 
 ```sh

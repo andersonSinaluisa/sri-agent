@@ -30,8 +30,10 @@ await ejecutar("probar-conexion", async ({ page }) => {
   if (errorNavegacion !== null) {
     throw new Error(
       `Chromium no pudo cargar el portal tras ${ms}ms: ${errorNavegacion}\n` +
-        "Si curl tampoco responde pero el navegador de escritorio si, el portal " +
-        "esta filtrando clientes automatizados (WAF por huella TLS o cabeceras).",
+        "Para interpretarlo: si desde otra maquina (otra IP) el portal SI responde, " +
+        "lo que falla es la salida de red de este host, no el navegador. " +
+        "Configura SRI_PROXY con una salida que alcance al SRI, o corre el agente " +
+        "en una maquina que ya lo alcance.",
     );
   }
 
