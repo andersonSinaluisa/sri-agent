@@ -195,6 +195,16 @@ if ! como_servicio "$NPM_BIN" run web:build; then
   exit 1
 fi
 
+# nginx corre como www-data, que no es dueño ni miembro del grupo del
+# directorio de la app (750). Se le habilita SOLO el paso hasta el build; el
+# contenido de /srv/sri-agent sigue sin ser listable por otros.
+if [ -d "$DESTINO/web/dist" ]; then
+  chmod o+x "$DESTINO" "$DESTINO/web"
+  chmod -R o+rX "$DESTINO/web/dist"
+else
+  aviso "No se genero $DESTINO/web/dist: el reverse proxy no va a encontrar la UI."
+fi
+
 info "Compilando el agente."
 if ! como_servicio "$NPM_BIN" run build; then
   aviso "El build falló."
