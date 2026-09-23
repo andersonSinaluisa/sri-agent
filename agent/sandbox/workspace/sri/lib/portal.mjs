@@ -32,6 +32,8 @@ export async function hayCookiesDeSesion(contexto) {
  * visible y quedarse con las líneas cortas, que es donde viven los mensajes.
  * Se descarta el texto fijo de la página para que no tape el mensaje real.
  */
+const SIN_MENSAJE = "la pantalla no muestra ningún mensaje";
+
 async function motivoDelRechazo(page) {
   const contenedor = page.locator(LOGIN.mensajeError);
   if ((await contenedor.count()) > 0) {
@@ -53,7 +55,7 @@ async function motivoDelRechazo(page) {
     .filter((l) => l.length > 3 && l.length < 160)
     .filter((l) => !relleno.some((r) => l.includes(r)));
 
-  return lineas.slice(0, 3).join(" | ") || "la pantalla no muestra ningún mensaje";
+  return lineas.slice(0, 3).join(" | ") || SIN_MENSAJE;
 }
 
 /**
@@ -149,14 +151,32 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
     log("Sin cookies de sesión vigentes.");
   }
 
-  log("Autenticando.");
+  // Se empieza de cero. Keycloak guarda el estado del flujo de autenticacion
+  // en cookies (AUTH_SESSION_ID, KC_RESTART); si quedaron viciadas de un
+  // intento anterior, vuelve a pintar el formulario SIN mensaje de error, que
+  // es indistinguible de una clave equivocada.
+  await page.context().clearCookies();
+  log("Autenticando desde una sesión limpia.");
+
   await page.goto(URLS.login, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(LOGIN.campoUsuario, { timeout: 30_000 });
 
   await escribirComoPersona(page, LOGIN.campoUsuario, credenciales.usuario, "usuario");
   await escribirComoPersona(page, LOGIN.campoClave, credenciales.clave, "clave");
 
-  await page.click(LOGIN.botonIngresar);
+  // Enter en el campo de clave: es como envia una persona y dispara el submit
+  // del formulario. Si a los pocos segundos seguimos en el login, se prueba
+  // el boton como respaldo.
+  await page.locator(LOGIN.campoClave).press("Enter");
+  const salio = await page
+    .waitForURL((u) => !u.href.includes(LOGIN.rutaAutenticacion), { timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!salio) {
+    log("El Enter no envió el formulario; se prueba el botón.");
+    await page.click(LOGIN.botonIngresar).catch(() => {});
+  }
 
   // Se espera a salir del realm de Keycloak, o a que aparezca el error.
   await Promise.race([
@@ -173,11 +193,18 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
     (await page.locator(LOGIN.campoUsuario).count()) > 0;
 
   if (siguePidiendoLogin) {
+    const motivo = await motivoDelRechazo(page);
+    const sinMensaje = motivo === SIN_MENSAJE;
+
     throw new ErrorCredenciales(
       `El SRI no aceptó el inicio de sesión del RUC ${credenciales.ruc}. ` +
-        `La pantalla dice: "${await motivoDelRechazo(page)}". ` +
-        "NO se reintenta: el portal bloquea la cuenta tras varios fallos. " +
-        "Comprobá la clave entrando a mano desde un navegador.",
+        (sinMensaje
+          ? "El portal volvió a mostrar el formulario SIN ningún mensaje de error. " +
+            "Eso NO indica clave incorrecta ni cuenta bloqueada: cuando la clave " +
+            "está mal, el portal lo dice. Sin mensaje suele significar que el " +
+            "formulario no llegó a enviarse o que el flujo de autenticación caducó."
+          : `La pantalla dice: "${motivo}".`) +
+        " No se reintenta automáticamente: varios fallos seguidos sí bloquean la cuenta.",
     );
   }
 
