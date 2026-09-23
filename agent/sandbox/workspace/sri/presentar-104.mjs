@@ -14,7 +14,9 @@ await ejecutar("presentar-104", async ({ page, entrada, credenciales, guardarSes
   }
 
   await asegurarSesion(page, credenciales, guardarSesion);
-  const { escritos } = await llenarFormulario104(page, periodo, casilleros);
+  const { escritos } = await llenarFormulario104(page, periodo, casilleros, {
+    ruc: credenciales.ruc,
+  });
   const leidos = await leerCasilleros(page);
 
   // Último control antes del punto de no retorno: lo que está en pantalla
@@ -26,6 +28,13 @@ await ejecutar("presentar-104", async ({ page, entrada, credenciales, guardarSes
           "No se presenta la declaración.",
       );
     }
+  }
+
+  if (DECLARACION_104.botonPresentar === null) {
+    throw new Error(
+      "Falta automatizar el paso 4 (Pago/Presentación): DECLARACION_104.botonPresentar " +
+        "sigue sin definir. El formulario quedó lleno pero NO se presentó nada.",
+    );
   }
 
   log("Presentando la declaración.");

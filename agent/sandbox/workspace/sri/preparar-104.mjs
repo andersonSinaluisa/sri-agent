@@ -15,7 +15,9 @@ await ejecutar("preparar-104", async ({ page, entrada, credenciales, guardarSesi
   }
 
   await asegurarSesion(page, credenciales, guardarSesion);
-  const { escritos, resumen } = await llenarFormulario104(page, periodo, casilleros);
+  const { escritos, resumen, mensajes } = await llenarFormulario104(page, periodo, casilleros, {
+    ruc: credenciales.ruc,
+  });
   const leidos = await leerCasilleros(page);
 
   await mkdir(rutaDatos("borradores"), { recursive: true });
@@ -25,5 +27,5 @@ await ejecutar("preparar-104", async ({ page, entrada, credenciales, guardarSesi
   );
   await page.screenshot({ path: captura, fullPage: true });
 
-  return { periodo, escritos, leidos, resumen, captura, presentado: false };
+  return { periodo, escritos, leidos, resumen, mensajes, captura, presentado: false };
 });

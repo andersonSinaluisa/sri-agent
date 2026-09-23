@@ -1,5 +1,6 @@
 import { liquidarIva, calcularFactorProporcionalidad } from "../agent/lib/calculo/formulario104.ts";
 import { fechaLimiteIva, novenoDigito } from "../agent/lib/normativa/calendario.ts";
+import { calcularMora, mesesDeAtraso } from "../agent/lib/calculo/multaInteres.ts";
 
 let fallos = 0;
 const ok = (n: string, a: unknown, e: unknown) => {
@@ -57,6 +58,53 @@ ok("diciembre cruza año", fechaLimiteIva("1790012345001", { anio: 2025, mes: 12
 ok("semestral 1er semestre", fechaLimiteIva("1790012345001", { anio: 2026, mes: 6 }, "semestral").toISOString().slice(0, 10), "2026-07-16");
 
 ok("feriado corre el plazo", fechaLimiteIva("1790012345001", { anio: 2026, mes: 1 }, "mensual", ["2026-02-16", "2026-02-17"]).toISOString().slice(0, 10), "2026-02-18");
+
+// ── Caso real, tomado del portal ────────────────────────────────────────────
+// El perfil del contribuyente 0953227857001 muestra:
+//   "2011 DECLARACION DE IVA - SEPTIEMBRE 2026 - 19/10/2026"
+// Noveno digito 5 -> dia 18 -> domingo -> corre al lunes 19.
+ok(
+  "REAL: vencimiento que muestra el portal del SRI",
+  fechaLimiteIva("0953227857001", { anio: 2026, mes: 9 }).toISOString().slice(0, 10),
+  "2026-10-19",
+);
+
+// ── Multa e interes: caso REAL del portal ───────────────────────────────────
+// Declaracion de JUNIO 2026 presentada tarde. El portal muestra:
+//   Impuesto USD 1.50 | Meses atrasados 3
+//   Interes  1.7130% (3 x 0.571%) -> USD 0.03
+//   Multa    9.00%    (3 x 3.00%) -> USD 0.14
+//   Total a pagar                 -> USD 1.67
+const mora = calcularMora({
+  impuestoCentavos: 150,
+  mesesAtraso: 3,
+  tasaInteresMensualMillonesimas: 5_710, // 0.571%
+});
+ok("REAL: interes que calcula el portal", mora.interesCentavos, 3);
+ok("REAL: multa que calcula el portal", mora.multaCentavos, 14);
+ok("REAL: total a pagar del portal", mora.totalAPagarCentavos, 167);
+ok("REAL: porcentaje de interes acumulado", mora.porcentajeInteresTotalMillonesimas, 17_130);
+ok("REAL: porcentaje de multa acumulado", mora.porcentajeMultaTotalMillonesimas, 90_000);
+
+// Vencimiento 20/07/2026; el portal cuenta 3 meses en una fecha del tercer tramo.
+ok(
+  "meses de atraso: un dia ya cuenta como mes",
+  mesesDeAtraso(new Date(Date.UTC(2026, 6, 20)), new Date(Date.UTC(2026, 6, 21))),
+  1,
+);
+ok(
+  "meses de atraso: tercer tramo",
+  mesesDeAtraso(new Date(Date.UTC(2026, 6, 20)), new Date(Date.UTC(2026, 9, 10))),
+  3,
+);
+ok(
+  "meses de atraso: al dia no hay mora",
+  mesesDeAtraso(new Date(Date.UTC(2026, 6, 20)), new Date(Date.UTC(2026, 6, 20))),
+  0,
+);
+ok("sin impuesto causado no hay interes", calcularMora({
+  impuestoCentavos: 0, mesesAtraso: 5, tasaInteresMensualMillonesimas: 5_710,
+}).totalAPagarCentavos, 0);
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`);
 process.exit(fallos === 0 ? 0 : 1);

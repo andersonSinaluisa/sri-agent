@@ -3,8 +3,26 @@
 // Salida:  { periodo, filas: [...], archivoListado }
 import { ejecutar, log } from "./lib/runner.mjs";
 import { asegurarSesion, aCentavos } from "./lib/portal.mjs";
-import { COMPROBANTES, URLS } from "./lib/selectores.mjs";
+import { COLUMNAS_COMPROBANTES, COMPROBANTES, URLS } from "./lib/selectores.mjs";
 import { join } from "node:path";
+
+/** "0992696036001\nCOMFARMALSA S.A." -> { ruc, razonSocial } */
+function partirEmisor(celda) {
+  const lineas = String(celda)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  return { ruc: lineas[0] ?? "", razonSocial: lineas.slice(1).join(" ") };
+}
+
+/** "Factura  016-021-000620505" -> { tipo, serie } */
+function partirTipoSerie(celda) {
+  const texto = String(celda).replace(/\s+/g, " ").trim();
+  // La serie es el último token y tiene forma NNN-NNN-NNNNNNNNN.
+  const coincidencia = texto.match(/^(.*?)\s+([\d-]+)$/);
+  if (coincidencia === null) return { tipo: texto, serie: "" };
+  return { tipo: coincidencia[1].trim(), serie: coincidencia[2] };
+}
 
 await ejecutar(
   "descargar-comprobantes",
@@ -14,46 +32,68 @@ await ejecutar(
 
     await asegurarSesion(page, credenciales, guardarSesion);
 
-    await page.goto(URLS.comprobantesRecibidos, { waitUntil: "domcontentloaded" });
+    await page.goto(URLS.comprobantesRecibidos, {
+      waitUntil: "domcontentloaded",
+      timeout: 90_000,
+    });
+    await page.waitForSelector(COMPROBANTES.selectAnio, { timeout: 30_000 });
+
     await page.selectOption(COMPROBANTES.selectAnio, String(anio));
     await page.selectOption(COMPROBANTES.selectMes, String(mes));
     await page.selectOption(COMPROBANTES.selectDia, "0"); // 0 = todo el mes
     await page.selectOption(COMPROBANTES.selectTipoComprobante, String(tipoComprobante));
-    await page.click(COMPROBANTES.botonConsultar);
 
-    await page
-      .waitForSelector(`${COMPROBANTES.tablaResultados}, ${COMPROBANTES.mensajeSinResultados}`)
-      .catch(() => {});
+    await page.click(COMPROBANTES.botonConsultar);
+    // La consulta pasa por reCAPTCHA Enterprise y vuelve por AJAX.
+    await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
 
     if (await page.locator(COMPROBANTES.mensajeSinResultados).count()) {
       log("El período no tiene comprobantes recibidos.");
       return { periodo: { anio, mes }, filas: [], archivoListado: null };
     }
 
-    const filas = await page.locator(COMPROBANTES.filasResultados).evaluateAll((trs) =>
-      trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.innerText.trim())),
-    );
+    const celdasPorFila = await page
+      .locator(COMPROBANTES.filasResultados)
+      .evaluateAll((filas) =>
+        filas.map((fila) => [...fila.querySelectorAll("td")].map((td) => td.innerText)),
+      );
 
-    // El orden de columnas depende del portal; se mapea acá y en ningún otro lado.
-    const comprobantes = filas
-      .filter((celdas) => celdas.length >= 8)
-      .map((celdas) => ({
-        rucEmisor: celdas[1],
-        razonSocialEmisor: celdas[2],
-        tipoComprobante: celdas[3],
-        serie: celdas[4],
-        claveAcceso: celdas[5],
-        fechaEmision: celdas[6],
-        fechaAutorizacion: celdas[7],
-        subtotalCentavos: aCentavos(celdas[8] ?? "0"),
-        ivaCentavos: aCentavos(celdas[9] ?? "0"),
-        totalCentavos: aCentavos(celdas[10] ?? "0"),
-      }));
+    const C = COLUMNAS_COMPROBANTES;
+    const comprobantes = celdasPorFila
+      .filter((celdas) => celdas.length > C.importeTotal)
+      .map((celdas) => {
+        const emisor = partirEmisor(celdas[C.rucYRazonSocial]);
+        const documento = partirTipoSerie(celdas[C.tipoYSerie]);
+        return {
+          rucEmisor: emisor.ruc,
+          razonSocialEmisor: emisor.razonSocial,
+          tipoComprobante: documento.tipo,
+          serie: documento.serie,
+          claveAcceso: celdas[C.claveAcceso].trim(),
+          fechaEmision: celdas[C.fechaEmision].trim(),
+          fechaAutorizacion: celdas[C.fechaHoraAutorizacion].trim(),
+          subtotalCentavos: aCentavos(celdas[C.valorSinImpuestos]),
+          ivaCentavos: aCentavos(celdas[C.iva]),
+          totalCentavos: aCentavos(celdas[C.importeTotal]),
+        };
+      });
+
+    // Control de coherencia: si los totales no cuadran, algo se leyó mal y es
+    // mejor saberlo acá que al liquidar.
+    const descuadradas = comprobantes.filter(
+      (c) => Math.abs(c.subtotalCentavos + c.ivaCentavos - c.totalCentavos) > 1,
+    );
+    if (descuadradas.length > 0) {
+      log(
+        `AVISO: ${descuadradas.length} de ${comprobantes.length} filas no cuadran ` +
+          "(subtotal + IVA != total). Puede haber cambiado el orden de las columnas.",
+      );
+    }
 
     let archivoListado = null;
     if (await page.locator(COMPROBANTES.enlaceDescargarListado).count()) {
       const [descarga] = await Promise.all([
-        page.waitForEvent("download"),
+        page.waitForEvent("download", { timeout: 60_000 }),
         page.click(COMPROBANTES.enlaceDescargarListado),
       ]);
       archivoListado = join(dirDescargas, `recibidos-${anio}-${String(mes).padStart(2, "0")}.txt`);
@@ -61,6 +101,11 @@ await ejecutar(
     }
 
     log(`Comprobantes leídos: ${comprobantes.length}`);
-    return { periodo: { anio, mes }, filas: comprobantes, archivoListado };
+    return {
+      periodo: { anio, mes },
+      filas: comprobantes,
+      archivoListado,
+      filasDescuadradas: descuadradas.length,
+    };
   },
 );

@@ -15,15 +15,25 @@
 export const URLS = {
   // Punto de entrada autenticado. Sin sesion redirige al login de Keycloak en
   // /auth/realms/Internet/..., con parametros de estado que cambian en cada
-  // visita: por eso se apunta acá y no a la URL del formulario.
+  // visita: por eso se apunta aca y no a la URL del formulario.
   login: "https://srienlinea.sri.gob.ec/tuportal-internet/",
-  inicio: "https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT",
-  // Descubierta con `npm run sri:inspeccionar`. Es un punto de entrada que
-  // exige sesion: sin autenticar redirige al login.
+
+  // Donde aterriza el portal despues de autenticar.
+  perfil: "https://srienlinea.sri.gob.ec/sri-en-linea/contribuyente/perfil",
+
+  // VERIFICADA. Punto de entrada que exige sesion.
   comprobantesRecibidos:
     "https://srienlinea.sri.gob.ec/tuportal-internet/accederAplicacion.jspa?redireccion=57&idGrupo=55",
+
+  // VERIFICADA. Enlace directo al Formulario IVA. Se va derecho aca en vez de
+  // abrir el menu hamburguesa y recorrer DECLARACIONES > Declaracion de
+  // impuestos > Elaboracion y envio: menos clics y menos que se rompa.
   declaracionIva:
-    "https://srienlinea.sri.gob.ec/sri-en-linea/SriDeclaracionesWeb/Declaraciones/Declaraciones",
+    "https://srienlinea.sri.gob.ec/tuportal-internet/accederAplicacion.jspa?redireccion=310&idGrupo=201",
+
+  // Listado de formularios, por si hiciera falta navegarlo.
+  menuDeclaraciones:
+    "https://srienlinea.sri.gob.ec/sri-en-linea/SriDeclaraciones/Publico/declaraciones",
 };
 
 export const LOGIN = {
@@ -48,43 +58,154 @@ export const LOGIN = {
 // pseudo-clase. Se usan selectores de atributo en vez de "#id" escapado:
 // un escape perdido produce "no es un selector valido", que es un error
 // confuso y facil de introducir al editar.
+/**
+ * Comprobantes electronicos recibidos. VERIFICADO contra el portal.
+ *
+ * Los ids de JSF llevan dos puntos, que en CSS inician una pseudo-clase: van
+ * como [id="..."] y no como "#form\:campo".
+ *
+ * OJO: la consulta esta protegida por reCAPTCHA Enterprise invisible
+ * (`executeRecaptcha('consulta_cel_recibidos','SI')` sobre el boton). Es por
+ * puntaje, no por desafio visual, asi que un navegador automatizado puede
+ * pasar o puede ser rechazado sin mensaje claro. Si la tabla queda vacia
+ * habiendo comprobantes, sospecha de esto antes que del selector.
+ */
 export const COMPROBANTES = {
   selectAnio: '[id="frmPrincipal:ano"]',
   selectMes: '[id="frmPrincipal:mes"]',
   selectDia: '[id="frmPrincipal:dia"]',
   selectTipoComprobante: '[id="frmPrincipal:cmbTipoComprobante"]',
-  botonConsultar: '[id="frmPrincipal:btnRecaptcha"]',
+  botonConsultar: '[id="frmPrincipal:btnBuscar"]',
+
   tablaResultados: '[id="frmPrincipal:tablaCompRecibidos"]',
-  filasResultados: '[id="frmPrincipal:tablaCompRecibidos"] tbody tr',
+  // PrimeFaces DataTable: las filas viven en el tbody con sufijo _data.
+  filasResultados: '[id="frmPrincipal:tablaCompRecibidos_data"] tr[data-ri]',
   enlaceDescargarListado: '[id="frmPrincipal:lnkTxtlistado"]',
   mensajeSinResultados: "text=No se encontraron registros",
 };
 
+/**
+ * Codigos del desplegable de tipo de comprobante, tal como los emite el
+ * portal. No siguen la numeracion de los codigos de documento del SRI: aca
+ * nota de credito es 3, no 4.
+ */
+export const TIPOS_COMPROBANTE = {
+  factura: "1",
+  liquidacionCompra: "2",
+  notaCredito: "3",
+  notaDebito: "4",
+  retencion: "6",
+};
+
+/**
+ * Columnas de la tabla de resultados, por indice. Doce columnas, y dos de
+ * ellas traen dos datos juntos: el RUC y la razon social vienen separados por
+ * un salto de linea, y el tipo y la serie por espacios.
+ */
+export const COLUMNAS_COMPROBANTES = {
+  nro: 0,
+  rucYRazonSocial: 1,
+  tipoYSerie: 2,
+  claveAcceso: 3,
+  fechaHoraAutorizacion: 4,
+  fechaEmision: 5,
+  valorSinImpuestos: 6,
+  iva: 7,
+  importeTotal: 8,
+};
+
 export const DECLARACION_104 = {
-  enlaceNuevaDeclaracion: "text=Declaración de IVA",
-  selectPeriodoAnio: "#anio",
-  selectPeriodoMes: "#mes",
-  botonContinuar: "text=Continuar",
-  // Mapa casillero -> selector del input en el formulario.
-  // Completar con los casilleros que el agente realmente llena.
-  casilleros: {
-    401: "#casilla401",
-    411: "#casilla411",
-    421: "#casilla421",
-    500: "#casilla500",
-    510: "#casilla510",
-    520: "#casilla520",
-    601: "#casilla601",
-    609: "#casilla609",
-    615: "#casilla615",
-    619: "#casilla619",
-    699: "#casilla699",
-  },
-  botonValidar: "text=Validar",
-  resumenLiquidacion: "#resumenLiquidacion",
-  // Paso final e irreversible. Solo se usa desde `presentar-104.mjs`.
-  botonPresentar: "text=Presentar declaración",
-  confirmacionPresentacion: "text=Declaración presentada",
-  numeroComprobante: "#numeroComprobante",
-  enlaceDescargarComprobante: "text=Descargar comprobante",
+  // ── Paso 1: Periodo Fiscal ── VERIFICADO contra el portal ────────────────
+  formulario: 'form[id="frmFlujoDeclaracion"]',
+
+  // SelectOneMenu de PrimeFaces: el <select> real esta oculto y hay que
+  // manejar el widget. Se elige por TEXTO, nunca por value: el portal emite
+  // "class ec.gob.sri.adm.catalogo.modelo.ObligacionTributaria@33", que es el
+  // hash de un objeto Java y cambia entre despliegues.
+  selectObligacion: "frmFlujoDeclaracion:somObligacion",
+  textoObligacionMensual: "2011",
+  textoObligacionSemestral: "2021",
+
+  // Calendar de PrimeFaces en formato mm/yy, con el teclado bloqueado.
+  campoPeriodo: "frmFlujoDeclaracion:calPeriodo",
+
+  botonSiguientePeriodo: '[id="frmFlujoDeclaracion:btnObligacionSiguiente"]',
+
+  pasos: '[id="formPasosDeclaracion:pasosDeclaracion"] .ui-steps-item',
+  mensajes: '[id="mensajePrincipal"]',
+
+  // ── Paso 2: Preguntas (perfilamiento) ── VERIFICADO ──────────────────────
+  // Cada pregunta es un div con id ESTABLE (P006, P018...). Los radios viven
+  // adentro con value SI/NO. Se direcciona por id de pregunta + valor, nunca
+  // por el indice del repeatCuestionario, que es posicional y se corre si el
+  // SRI agrega o quita una pregunta.
+  panelPreguntas: '[id="frmFlujoDeclaracion:panelPerfialdor"]',
+  contenedorPreguntas: "#contenedorEstiloPanel",
+  preguntaPorId: (codigo) => `#${codigo}`,
+  radioSi: 'input[type="radio"][value="SI"]',
+  radioNo: 'input[type="radio"][value="NO"]',
+  textoPregunta: '[id$=":oTxtdetallePregunta"]',
+
+  // Atajo: salta el cuestionario y abre TODAS las secciones del formulario.
+  // El propio portal dice "No es necesario contestar las preguntas del
+  // perfilamiento". Conviene usarlo: responder que no a una pregunta OCULTA
+  // la seccion correspondiente, y con ella sus casilleros.
+  enlaceFormularioCompletoDesdePreguntas:
+    '[id="frmFlujoDeclaracion:clkFormularioCompleto"]',
+
+  // Carga de la declaracion desde archivo .json/.xml. Sin explorar: seria un
+  // camino mas robusto que llenar campo por campo, pero hace falta conocer el
+  // esquema que espera.
+  campoArchivoDeclaracion: "#archivoInput",
+
+  // ── Paso 3: Formulario ── VERIFICADO contra el portal ────────────────────
+  // La cabecera repite RUC, periodo y tipo. Se comprueban ANTES de escribir:
+  // llenar el formulario del mes equivocado es el error mas caro posible.
+  cabeceraRuc: '[id="frmFlujoDeclaracion:outIdentificacion"]',
+  cabeceraRazonSocial: '[id="frmFlujoDeclaracion:outRazonSocial"]',
+  cabeceraPeriodo: '[id="frmFlujoDeclaracion:outPeriodoFiscal"]',
+  cabeceraTipoDeclaracion: '[id="frmFlujoDeclaracion:outMarcaDeclaracion"]',
+
+  panelFormulario: '[id="frmFlujoDeclaracion:panelFormulario"]',
+
+  // El formulario viene por secciones plegadas; esto las abre todas.
+  enlaceVerFormularioCompleto: '[id="frmFlujoDeclaracion:clkVerFormCompleto"]',
+  // El boton del modal tiene id j_idt### (autogenerado por JSF, cambia entre
+  // versiones): se busca por texto dentro del dialogo visible.
+  dialogoFormularioCompleto: ".ui-dialog:visible",
+  textoAceptarDialogo: "Aceptar",
+
+  listaErrores: "#itemsMensajesErrores",
+  listaAdvertencias: "#itemsMensajesAdvertencias",
+
+  // Los casilleros NO se listan aca: se descubren del DOM en cada corrida.
+  // Ver lib/casilleros.mjs.
+
+  // ── Resumen (final del paso 3) ── VERIFICADO ─────────────────────────────
+  // El portal calcula multa e interes por su cuenta y los muestra bloqueados.
+  // Se leen para CONTRASTARLOS con nuestro calculo, no para reemplazarlos.
+  resumenTotalAPagar: '[id="frmFlujoDeclaracion:totalAPagar"]',
+  resumenInteres: '[id="frmFlujoDeclaracion:valorInteres_input"]',
+  resumenMulta: '[id="frmFlujoDeclaracion:valorMulta_input"]',
+  botonSiguienteResumen: '[id="frmFlujoDeclaracion:divBotonContinuarConfirmacionEnviar"]',
+  botonAnteriorResumen: '[id="frmFlujoDeclaracion:divBotonAtrasConfirmacion"]',
+
+  // Aparece cuando la declaracion va tarde; pide responder un cuestionario.
+  dialogoSanciones: '[id="frmFlujoDeclaracion:multasPecuniariasdlq"]',
+
+  // ── Paso 4: Pago ── VERIFICADO ───────────────────────────────────────────
+  pagoPendiente: '[id="frmFlujoDeclaracion:txtPendientePago"]',
+  // Los radios llevan como value un hash de objeto Java
+  // (ConfiguracionMedioPagoTo@408789374), que cambia entre despliegues: se
+  // eligen por indice, no por valor.
+  medioPagoOtrasFormas: '[id="frmFlujoDeclaracion:sorMedioPagoSeleccionSimple:0"]',
+  medioPagoConvenioDebito: '[id="frmFlujoDeclaracion:sorMedioPagoSeleccionSimple:1"]',
+  panelComprobante: '[id="frmFlujoDeclaracion:panelImpresionComprobante"]',
+
+  // ── Confirmacion ── VERIFICADO ───────────────────────────────────────────
+  // OJO: el portal pinta el exito con la clase "ui-messages-fatal", la misma
+  // que usa para errores. Hay que reconocerlo POR TEXTO; mirar la clase haria
+  // leer una declaracion presentada como un fallo.
+  panelMensajePrincipal: "#mensajePrincipal",
+  textoDeclaracionPresentada: "Su declaración ha sido procesada satisfactoriamente",
 };

@@ -20,6 +20,7 @@ const SalidaSchema = z.object({
   periodo: z.object({ anio: z.number().int(), mes: z.number().int() }),
   filas: z.array(ComprobanteSchema),
   archivoListado: z.string().nullable(),
+  filasDescuadradas: z.number().int().default(0),
 });
 
 type Salida = z.infer<typeof SalidaSchema>;
@@ -32,9 +33,12 @@ export default defineTool({
     anio: z.number().int().min(2010).max(2100),
     mes: z.number().int().min(1).max(12),
     tipoComprobante: z
-      .string()
+      .enum(["1", "2", "3", "4", "6"])
       .default("1")
-      .describe("Código del SRI: 1 factura, 4 nota de crédito, 5 nota de débito, 7 retención."),
+      .describe(
+        "Código del desplegable del portal: 1 factura, 2 liquidación de compra, " +
+          "3 nota de crédito, 4 nota de débito, 6 comprobante de retención.",
+      ),
   }),
   outputSchema: SalidaSchema,
   label: {
