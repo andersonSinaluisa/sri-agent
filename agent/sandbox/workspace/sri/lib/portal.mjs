@@ -9,15 +9,28 @@ export class ErrorCredenciales extends Error {}
  * ausencia del formulario, porque Keycloak a veces sirve el login sin cambiar
  * la barra de direcciones.
  */
-async function sesionActiva(page) {
+async function sesionActiva(page, msEspera = 12_000) {
   // En el realm de Keycloak no hay sesion, sin mas que mirar.
   if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
 
-  // Marca POSITIVA. Antes esto devolvia true con solo no encontrar el
-  // formulario de login, y la home publica —a donde el portal redirige
-  // cuando caduca la sesion— tampoco lo tiene: el agente seguia operando sin
-  // sesion y fallaba despues con "no se encontro el selector".
-  return (await page.locator(LOGIN.marcaSesionActiva).count()) > 0;
+  // Marca POSITIVA: no alcanza con no ver el formulario de login, porque la
+  // home publica —a donde redirige el portal cuando caduca la sesion—
+  // tampoco lo tiene.
+  //
+  // Y se ESPERA a que aparezca en vez de contarla al instante: el perfil es
+  // una pagina Angular y el componente se monta despues del domcontentloaded.
+  // Un count() inmediato lee 0 y concluye que no hay sesion aunque si la haya.
+  // Compiten las dos marcas: la que solo existe con sesion y la que solo
+  // existe sin ella. Gana la primera que aparezca, asi que resuelve rapido en
+  // ambos sentidos en vez de agotar el tiempo de espera cuando no hay sesion.
+  return Promise.race([
+    page
+      .waitForSelector(LOGIN.marcaSesionActiva, { state: "attached", timeout: msEspera })
+      .then(() => true),
+    page
+      .waitForSelector(LOGIN.marcaSesionAusente, { state: "visible", timeout: msEspera })
+      .then(() => false),
+  ]).catch(() => false);
 }
 
 /**
@@ -59,10 +72,21 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
   await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" }).catch(() => {});
 
   if (!(await sesionActiva(page))) {
+    // Se separan las dos causas: que el portal siga mostrando el login
+    // significa credenciales rechazadas; que muestre otra cosa significa que
+    // la marca de sesion ya no sirve.
+    const siguePidiendoLogin =
+      page.url().includes(LOGIN.rutaAutenticacion) ||
+      (await page.locator(LOGIN.campoUsuario).count()) > 0;
+
     throw new Error(
-      `No se confirmó el inicio de sesión; la página quedó en ${page.url()}. ` +
-        "Si el formulario sigue visible, revisá LOGIN en selectores.mjs contra " +
-        "la captura de diagnóstico.",
+      siguePidiendoLogin
+        ? "El portal volvió a pedir credenciales: el usuario o la clave de " +
+          `SRI_CRED_${credenciales.ruc} no son válidos, o la cuenta está bloqueada. ` +
+          "NO se reintenta: el SRI bloquea la cuenta tras varios fallos."
+        : `Se inició sesión pero no se reconoció la pantalla: quedó en ${page.url()} ` +
+          `y no aparece "${LOGIN.marcaSesionActiva}". Revisá LOGIN.marcaSesionActiva ` +
+          "en selectores.mjs contra la captura de diagnóstico.",
     );
   }
 
