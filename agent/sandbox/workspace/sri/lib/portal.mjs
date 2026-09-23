@@ -22,7 +22,9 @@ async function sesionActiva(page) {
  * tuvo que autenticarse de nuevo.
  */
 export async function asegurarSesion(page, credenciales, guardarSesion) {
-  await page.goto(URLS.inicio, { waitUntil: "domcontentloaded" });
+  // Al perfil y no a la home: la home publica carga con o sin sesion, asi que
+  // no sirve para saber si hay que autenticarse.
+  await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" });
 
   if (await sesionActiva(page)) {
     log("Sesión reutilizada desde el estado guardado.");

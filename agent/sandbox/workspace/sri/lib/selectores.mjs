@@ -18,7 +18,11 @@ export const URLS = {
   // visita: por eso se apunta aca y no a la URL del formulario.
   login: "https://srienlinea.sri.gob.ec/tuportal-internet/",
 
-  // Donde aterriza el portal despues de autenticar.
+  // Home publica. Sirve para probar conectividad sin sesion.
+  inicio: "https://srienlinea.sri.gob.ec/sri-en-linea/inicio/NAT",
+
+  // Donde aterriza el portal despues de autenticar. Sin sesion redirige al
+  // login, que es justo lo que `asegurarSesion` necesita detectar.
   perfil: "https://srienlinea.sri.gob.ec/sri-en-linea/contribuyente/perfil",
 
   // VERIFICADA. Punto de entrada que exige sesion.
@@ -209,3 +213,12 @@ export const DECLARACION_104 = {
   panelMensajePrincipal: "#mensajePrincipal",
   textoDeclaracionPresentada: "Su declaración ha sido procesada satisfactoriamente",
 };
+
+// Cada URL tiene que ser una cadena no vacia. Sin esto, quitar o renombrar una
+// entrada llega hasta Playwright como `page.goto(undefined)` y el error que se
+// ve es "url: expected string, got undefined", que no dice cual falta.
+for (const [nombre, valor] of Object.entries(URLS)) {
+  if (typeof valor !== "string" || valor.length === 0) {
+    throw new Error(`URLS.${nombre} no es una URL valida: ${JSON.stringify(valor)}`);
+  }
+}

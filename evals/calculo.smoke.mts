@@ -1,6 +1,7 @@
 import { liquidarIva, calcularFactorProporcionalidad } from "../agent/lib/calculo/formulario104.ts";
 import { fechaLimiteIva, novenoDigito } from "../agent/lib/normativa/calendario.ts";
 import { calcularMora, mesesDeAtraso } from "../agent/lib/calculo/multaInteres.ts";
+import { repartirVentas } from "../agent/lib/calculo/ventas.ts";
 
 let fallos = 0;
 const ok = (n: string, a: unknown, e: unknown) => {
@@ -105,6 +106,44 @@ ok(
 ok("sin impuesto causado no hay interes", calcularMora({
   impuestoCentavos: 0, mesesAtraso: 5, tasaInteresMensualMillonesimas: 5_710,
 }).totalAPagarCentavos, 0);
+
+// ── Reparto de ventas por tarifa ────────────────────────────────────────────
+// Mezcla realista: 15% local, 5% local, y una venta de activo fijo.
+const reparto = repartirVentas([
+  { tarifa: "general", baseBrutaCentavos: 100_000, notasCreditoCentavos: 10_000, ivaGeneradoCentavos: 13_500 },
+  { tarifa: "cinco", baseBrutaCentavos: 40_000, ivaGeneradoCentavos: 2_000 },
+  { tarifa: "general", esActivoFijo: true, baseBrutaCentavos: 50_000, ivaGeneradoCentavos: 7_500 },
+]);
+ok("ventas: bruto del 15% local", reparto.porConcepto["concepto450"], 100_000);
+ok("ventas: neto del 15% local (bruto - N/C)", reparto.porConcepto["concepto460"], 90_000);
+ok("ventas: IVA del 15% local", reparto.porConcepto["concepto470"], 13_500);
+ok("ventas: bruto del 5% va a su propio renglon", reparto.porConcepto["concepto452"], 40_000);
+ok("ventas: activo fijo va a su propio renglon", reparto.porConcepto["concepto510"], 50_000);
+ok("ventas: el 15% local NO absorbe al 5%", reparto.porConcepto["concepto450"], 100_000);
+ok("ventas: gravadas suman netos de toda tarifa distinta de cero", reparto.ventasGravadasCentavos, 180_000);
+ok("ventas: sin ventas a tarifa cero", reparto.ventasTarifa0Centavos, 0);
+ok("ventas: IVA generado total", reparto.ivaGeneradoCentavos, 23_000);
+
+// Dos ventas de la misma tarifa se acumulan en el mismo concepto.
+ok("ventas: se acumulan por concepto", repartirVentas([
+  { tarifa: "general", baseBrutaCentavos: 1_000, ivaGeneradoCentavos: 150 },
+  { tarifa: "general", baseBrutaCentavos: 2_000, ivaGeneradoCentavos: 300 },
+]).porConcepto["concepto450"], 3_000);
+
+// Una tarifa sin reparto verificado falla nombrandola, no adivina un casillero.
+// Tarifa 0% todavia no tiene reparto verificado: esa fila no aparecio en los
+// volcados del formulario. Debe FALLAR nombrandola, nunca adivinar un campo.
+let fallo = "";
+try {
+  repartirVentas([{ tarifa: "cero", baseBrutaCentavos: 30_000, ivaGeneradoCentavos: 0 }]);
+} catch (e) { fallo = (e as Error).message; }
+ok("ventas: tarifa 0% sin reparto verificado falla", fallo.includes("cero:local"), true);
+
+let fallo2 = "";
+try {
+  repartirVentas([{ tarifa: "general", baseBrutaCentavos: 100, notasCreditoCentavos: 500, ivaGeneradoCentavos: 0 }]);
+} catch (e) { fallo2 = (e as Error).message; }
+ok("ventas: N/C mayor que la base falla", fallo2.includes("superan la base bruta"), true);
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`);
 process.exit(fallos === 0 ? 0 : 1);
