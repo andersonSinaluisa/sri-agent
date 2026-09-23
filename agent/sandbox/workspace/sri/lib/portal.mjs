@@ -24,6 +24,75 @@ export async function hayCookiesDeSesion(contexto) {
   );
 }
 
+/**
+ * Qué dice la pantalla de login cuando rechaza el intento.
+ *
+ * Primero se prueban los contenedores de error de Keycloak; si ninguno
+ * aparece —no están verificados contra este portal— se cae a leer el texto
+ * visible y quedarse con las líneas cortas, que es donde viven los mensajes.
+ * Se descarta el texto fijo de la página para que no tape el mensaje real.
+ */
+async function motivoDelRechazo(page) {
+  const contenedor = page.locator(LOGIN.mensajeError);
+  if ((await contenedor.count()) > 0) {
+    const texto = (await contenedor.first().innerText()).replace(/\s+/g, " ").trim();
+    if (texto !== "") return texto;
+  }
+
+  const relleno = [
+    "Iniciar sesión",
+    "Generar o recuperar clave",
+    "Privacidad",
+    "Microsoft Edge",
+    "Servicio de Rentas Internas",
+  ];
+
+  const lineas = (await page.locator("body").innerText().catch(() => ""))
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter((l) => l.length > 3 && l.length < 160)
+    .filter((l) => !relleno.some((r) => l.includes(r)));
+
+  return lineas.slice(0, 3).join(" | ") || "la pantalla no muestra ningún mensaje";
+}
+
+/**
+ * Escribe en un campo tecleando de verdad, letra por letra.
+ *
+ * El formulario de login del SRI bloquea pegar y validar por DOM:
+ *
+ *   onpaste="return false"  oncopy="return false"  ondrop="return false"
+ *   onkeypress="return soloNumerosLetras(event)"
+ *
+ * `page.fill()` no teclea: asigna `value` y dispara un `input`. Para un
+ * formulario que escucha el teclado, el campo queda como si no se hubiera
+ * tocado, y el portal responde igual que ante una clave equivocada. De ahi
+ * que las credenciales parecieran incorrectas estando bien.
+ *
+ * Despues se comprueba la LONGITUD de lo que quedo escrito —nunca el
+ * contenido— para detectar un `maxlength` que corto el texto o un filtro de
+ * teclas que descarto caracteres.
+ */
+async function escribirComoPersona(page, selector, texto, nombreCampo) {
+  const campo = page.locator(selector);
+  await campo.click();
+  // Por si quedo algo de un intento anterior.
+  await campo.press("Control+a").catch(() => {});
+  await campo.press("Delete").catch(() => {});
+
+  // Un retardo pequeno: algunos formularios descartan rafagas instantaneas.
+  await campo.pressSequentially(texto, { delay: 25 });
+
+  const escrito = await campo.inputValue();
+  if (escrito.length !== texto.length) {
+    throw new Error(
+      `El campo "${nombreCampo}" acepto ${escrito.length} de ${texto.length} caracteres. ` +
+        "Puede ser el maxlength del campo o un filtro de teclas que descarta " +
+        "algun caracter de la credencial.",
+    );
+  }
+}
+
 /** Error de credenciales: no se debe reintentar automáticamente. */
 export class ErrorCredenciales extends Error {}
 
@@ -82,8 +151,11 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
 
   log("Autenticando.");
   await page.goto(URLS.login, { waitUntil: "domcontentloaded" });
-  await page.fill(LOGIN.campoUsuario, credenciales.usuario);
-  await page.fill(LOGIN.campoClave, credenciales.clave);
+  await page.waitForSelector(LOGIN.campoUsuario, { timeout: 30_000 });
+
+  await escribirComoPersona(page, LOGIN.campoUsuario, credenciales.usuario, "usuario");
+  await escribirComoPersona(page, LOGIN.campoClave, credenciales.clave, "clave");
+
   await page.click(LOGIN.botonIngresar);
 
   // Se espera a salir del realm de Keycloak, o a que aparezca el error.
@@ -92,9 +164,21 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
     page.waitForSelector(LOGIN.mensajeError, { timeout: 45_000 }),
   ]).catch(() => {});
 
-  if (await page.locator(LOGIN.mensajeError).count()) {
-    const detalle = (await page.locator(LOGIN.mensajeError).first().innerText()).trim();
-    throw new ErrorCredenciales(`El SRI rechazó el inicio de sesión: ${detalle}`);
+  // Si seguimos en el login, el intento no prosperó. Se lee AQUI lo que dice
+  // la pantalla, antes de navegar a ningún lado: antes se iba al perfil
+  // primero y eso destruía la única página que explicaba el motivo, dejando
+  // como diagnóstico una suposición nuestra en vez de la razón del portal.
+  const siguePidiendoLogin =
+    page.url().includes(LOGIN.rutaAutenticacion) ||
+    (await page.locator(LOGIN.campoUsuario).count()) > 0;
+
+  if (siguePidiendoLogin) {
+    throw new ErrorCredenciales(
+      `El SRI no aceptó el inicio de sesión del RUC ${credenciales.ruc}. ` +
+        `La pantalla dice: "${await motivoDelRechazo(page)}". ` +
+        "NO se reintenta: el portal bloquea la cuenta tras varios fallos. " +
+        "Comprobá la clave entrando a mano desde un navegador.",
+    );
   }
 
   // Tras autenticar, el portal puede aterrizar en distintas pantallas. Se va
@@ -102,21 +186,10 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
   await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" }).catch(() => {});
 
   if (!(await sesionActiva(page))) {
-    // Se separan las dos causas: que el portal siga mostrando el login
-    // significa credenciales rechazadas; que muestre otra cosa significa que
-    // la marca de sesion ya no sirve.
-    const siguePidiendoLogin =
-      page.url().includes(LOGIN.rutaAutenticacion) ||
-      (await page.locator(LOGIN.campoUsuario).count()) > 0;
-
     throw new Error(
-      siguePidiendoLogin
-        ? "El portal volvió a pedir credenciales: el usuario o la clave de " +
-          `SRI_CRED_${credenciales.ruc} no son válidos, o la cuenta está bloqueada. ` +
-          "NO se reintenta: el SRI bloquea la cuenta tras varios fallos."
-        : `Se inició sesión pero no se reconoció la pantalla: quedó en ${page.url()} ` +
-          `y no aparece "${LOGIN.marcaSesionActiva}". Revisá LOGIN.marcaSesionActiva ` +
-          "en selectores.mjs contra la captura de diagnóstico.",
+      `Se inició sesión pero no se reconoció la pantalla: quedó en ${page.url()} ` +
+        `y no aparece "${LOGIN.marcaSesionActiva}". Revisá LOGIN.marcaSesionActiva ` +
+        "en selectores.mjs contra la captura de diagnóstico.",
     );
   }
 
