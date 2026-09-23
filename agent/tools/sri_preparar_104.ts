@@ -4,6 +4,20 @@ import { ejecutarScriptSri, leerBinarioSandbox } from "../lib/sri/ejecutar.js";
 import { mismoContribuyente } from "../lib/sri/politicas.js";
 import { enviarCapturasAlModelo } from "../lib/sri/capturas.js";
 
+/** [{casillero, centavos}] -> {casillero: centavos}, que es lo que usa el script. */
+function comoMapa(
+  entradas: readonly { readonly casillero: string; readonly centavos: number }[],
+): Record<string, number> {
+  const mapa: Record<string, number> = {};
+  for (const { casillero, centavos } of entradas) {
+    if (mapa[casillero] !== undefined) {
+      throw new Error(`El casillero ${casillero} viene repetido.`);
+    }
+    mapa[casillero] = centavos;
+  }
+  return mapa;
+}
+
 export default defineTool({
   description:
     "Abre el Formulario 104 del período en SRI en línea, escribe los casilleros y SE DETIENE antes de presentar. Devuelve una captura del formulario lleno para revisarlo. No presenta nada.",
@@ -11,9 +25,19 @@ export default defineTool({
     ruc: z.string().regex(/^\d{13}$/),
     anio: z.number().int().min(2010).max(2100),
     mes: z.number().int().min(1).max(12),
+    // Arreglo y no un objeto indexado: `z.record` con clave por patrón genera
+    // JSON Schema con `propertyNames`, que está fuera del subconjunto de
+    // function-calling que aceptan los proveedores y produce un 400 sin
+    // explicación. Un arreglo de objetos lo entiende cualquiera.
     casilleros: z
-      .record(z.string().regex(/^\d{3}$/), z.number().int())
-      .describe("Casillero del 104 -> monto en centavos enteros."),
+      .array(
+        z.object({
+          casillero: z.string().regex(/^\d{3}$/).describe("Número de casillero, p. ej. 401."),
+          centavos: z.number().int().describe("Monto en centavos enteros."),
+        }),
+      )
+      .min(1)
+      .describe("Un elemento por casillero a escribir."),
   }),
   approval: (contexto) => mismoContribuyente(contexto) ?? "not-applicable",
   label: { start: ({ ruc, anio, mes }) => `Preparar 104 · ${ruc} · ${anio}-${mes}` },
@@ -25,7 +49,10 @@ export default defineTool({
       resumen: string | null;
       captura: string;
       presentado: false;
-    }>(ctx, "preparar-104.mjs", ruc, { periodo: { anio, mes }, casilleros });
+    }>(ctx, "preparar-104.mjs", ruc, {
+      periodo: { anio, mes },
+      casilleros: comoMapa(casilleros),
+    });
 
     const capturaBase64 = await leerBinarioSandbox(ctx, resultado.captura);
     return { ...resultado, capturaBase64 };

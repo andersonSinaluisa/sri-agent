@@ -3,6 +3,20 @@ import { z } from "zod";
 import { ejecutarScriptSri } from "../lib/sri/ejecutar.js";
 import { esAprobadorAutorizado, mismoContribuyente } from "../lib/sri/politicas.js";
 
+/** [{casillero, centavos}] -> {casillero: centavos}, que es lo que usa el script. */
+function comoMapa(
+  entradas: readonly { readonly casillero: string; readonly centavos: number }[],
+): Record<string, number> {
+  const mapa: Record<string, number> = {};
+  for (const { casillero, centavos } of entradas) {
+    if (mapa[casillero] !== undefined) {
+      throw new Error(`El casillero ${casillero} viene repetido.`);
+    }
+    mapa[casillero] = centavos;
+  }
+  return mapa;
+}
+
 export default defineTool({
   description:
     "PRESENTA la declaración de IVA ante el SRI. Acción irreversible y con efecto jurídico: genera una obligación declarada a nombre del contribuyente. Solo llamala después de que una persona haya revisado la captura de sri_preparar_104 y con los mismos casilleros.",
@@ -10,7 +24,19 @@ export default defineTool({
     ruc: z.string().regex(/^\d{13}$/),
     anio: z.number().int().min(2010).max(2100),
     mes: z.number().int().min(1).max(12),
-    casilleros: z.record(z.string().regex(/^\d{3}$/), z.number().int()),
+    // Arreglo y no un objeto indexado: `z.record` con clave por patrón genera
+    // JSON Schema con `propertyNames`, que está fuera del subconjunto de
+    // function-calling que aceptan los proveedores y produce un 400 sin
+    // explicación. Un arreglo de objetos lo entiende cualquiera.
+    casilleros: z
+      .array(
+        z.object({
+          casillero: z.string().regex(/^\d{3}$/).describe("Número de casillero, p. ej. 401."),
+          centavos: z.number().int().describe("Monto en centavos enteros."),
+        }),
+      )
+      .min(1)
+      .describe("Un elemento por casillero a escribir."),
     totalAPagarCentavos: z
       .number()
       .int()
@@ -46,7 +72,7 @@ export default defineTool({
       presentado: true;
     }>(ctx, "presentar-104.mjs", ruc, {
       periodo: { anio, mes },
-      casilleros,
+      casilleros: comoMapa(casilleros),
       confirmacion: "PRESENTAR",
     });
   },

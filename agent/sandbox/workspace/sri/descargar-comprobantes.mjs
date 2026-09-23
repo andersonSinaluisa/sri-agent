@@ -2,7 +2,7 @@
 // Entrada: { anio: number, mes: number, tipoComprobante?: string }
 // Salida:  { periodo, filas: [...], archivoListado }
 import { ejecutar, log } from "./lib/runner.mjs";
-import { asegurarSesion, aCentavos } from "./lib/portal.mjs";
+import { asegurarSesion, aCentavos, exigirPantalla } from "./lib/portal.mjs";
 import { COLUMNAS_COMPROBANTES, COMPROBANTES, URLS } from "./lib/selectores.mjs";
 import { join } from "node:path";
 
@@ -36,7 +36,10 @@ await ejecutar(
       waitUntil: "domcontentloaded",
       timeout: 90_000,
     });
-    await page.waitForSelector(COMPROBANTES.selectAnio, { timeout: 30_000 });
+    await page
+      .waitForSelector(COMPROBANTES.selectAnio, { timeout: 30_000 })
+      .catch(() => {});
+    await exigirPantalla(page, COMPROBANTES.selectAnio, "comprobantes recibidos");
 
     await page.selectOption(COMPROBANTES.selectAnio, String(anio));
     await page.selectOption(COMPROBANTES.selectMes, String(mes));

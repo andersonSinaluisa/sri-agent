@@ -48,9 +48,19 @@ export const LOGIN = {
   campoClave: "#password",
   botonIngresar: "#kc-login",
 
-  // La sesion se detecta por la URL, no por un elemento: estar o no en el
-  // realm de Keycloak es inequivoco y no depende del diseno de la pagina.
+  // La sesion se detecta por la URL del realm de Keycloak...
   rutaAutenticacion: "/auth/realms/",
+
+  // ...y ADEMAS por una marca POSITIVA de estar autenticado. No alcanza con
+  // "no veo el formulario de login": cuando la sesion caduca, el portal
+  // manda a la home publica, que tampoco lo tiene. Con solo la comprobacion
+  // negativa el agente creia tener sesion y seguia operando sin ella, y todo
+  // fallaba despues como "selector no encontrado".
+  // Estos componentes solo existen en el perfil del contribuyente.
+  marcaSesionActiva: "perfil-contribuyente, sri-datos-contribuyente",
+
+  // La home publica ofrece "Iniciar sesion"; el perfil no.
+  marcaSesionAusente: "text=Iniciar sesión",
 
   // Mensaje de credenciales rechazadas. Sin verificar todavia: son los
   // contenedores estandar de Keycloak. Si el login falla sin decir por que,

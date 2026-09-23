@@ -1,7 +1,7 @@
 import { defineAgent } from "eve";
 
 export default defineAgent({
-  model: "inclusionai/ling-3.0-flash-vl-free",
+  model: "inclusionai/ling-3.0-flash-sante",
 
   // Se apagan las tools por defecto (bash, web_search, web_fetch, glob, grep,
   // todo, read_file, write_file, sleep...). Este agente no las usa: opera por

@@ -10,8 +10,14 @@ export class ErrorCredenciales extends Error {}
  * la barra de direcciones.
  */
 async function sesionActiva(page) {
+  // En el realm de Keycloak no hay sesion, sin mas que mirar.
   if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
-  return (await page.locator(LOGIN.campoUsuario).count()) === 0;
+
+  // Marca POSITIVA. Antes esto devolvia true con solo no encontrar el
+  // formulario de login, y la home publica —a donde el portal redirige
+  // cuando caduca la sesion— tampoco lo tiene: el agente seguia operando sin
+  // sesion y fallaba despues con "no se encontro el selector".
+  return (await page.locator(LOGIN.marcaSesionActiva).count()) > 0;
 }
 
 /**
@@ -47,6 +53,10 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
     const detalle = (await page.locator(LOGIN.mensajeError).first().innerText()).trim();
     throw new ErrorCredenciales(`El SRI rechazó el inicio de sesión: ${detalle}`);
   }
+
+  // Tras autenticar, el portal puede aterrizar en distintas pantallas. Se va
+  // al perfil a proposito para comprobar la sesion siempre en el mismo lugar.
+  await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" }).catch(() => {});
 
   if (!(await sesionActiva(page))) {
     throw new Error(
@@ -111,3 +121,25 @@ export function aCentavos(texto) {
 export function deCentavos(centavos) {
   return (centavos / 100).toFixed(2);
 }
+
+/**
+ * Comprueba que la pantalla esperada realmente cargo, y si no, dice por que.
+ *
+ * Sin esto, una sesion caida se ve igual que un selector cambiado: el portal
+ * redirige a la home publica y lo unico que se reporta es que falto un
+ * elemento, que manda a buscar el problema donde no esta.
+ */
+export async function exigirPantalla(page, selector, nombre) {
+  if ((await page.locator(selector).count()) > 0) return;
+
+  const conSesion = await sesionActiva(page);
+  throw new Error(
+    conSesion
+      ? `Hay sesion, pero la pantalla de ${nombre} no tiene "${selector}". ` +
+        `Estamos en ${page.url()}. Probablemente cambio el portal: inspeccionala.`
+      : `No hay sesion iniciada al abrir ${nombre}; el portal redirigio a ${page.url()}. ` +
+        "No es un selector: revisa credenciales o si caduco la sesion guardada.",
+  );
+}
+
+export { sesionActiva };

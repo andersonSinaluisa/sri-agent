@@ -1,5 +1,5 @@
 import { log } from "./runner.mjs";
-import { aCentavos, deCentavos } from "./portal.mjs";
+import { aCentavos, deCentavos, exigirPantalla } from "./portal.mjs";
 import { elegirOpcion, escribirPeriodo } from "./primefaces.mjs";
 import { casillerosVisibles, mapearCasilleros } from "./casilleros.mjs";
 import { DECLARACION_104, URLS } from "./selectores.mjs";
@@ -24,7 +24,8 @@ const MESES = [
  */
 export async function abrirPeriodo(page, periodo, periodicidad = "mensual") {
   await page.goto(URLS.declaracionIva, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await page.waitForSelector(DECLARACION_104.formulario, { timeout: 30_000 });
+  await page.waitForSelector(DECLARACION_104.formulario, { timeout: 30_000 }).catch(() => {});
+  await exigirPantalla(page, DECLARACION_104.formulario, "declaración de IVA");
 
   const texto =
     periodicidad === "semestral"
