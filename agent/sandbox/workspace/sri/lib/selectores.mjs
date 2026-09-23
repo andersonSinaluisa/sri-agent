@@ -62,6 +62,15 @@ export const LOGIN = {
   // La home publica ofrece "Iniciar sesion"; el perfil no.
   marcaSesionAusente: "text=Iniciar sesión",
 
+  // Cookies que sostienen la sesion. Sirven como DESCARTE: sin ninguna
+  // vigente no hay sesion y se va derecho al login, sin navegar al perfil.
+  //
+  // No sirven para lo contrario: que la cookie exista no prueba que siga
+  // viva. Keycloak la deja en el navegador aunque el servidor ya la haya
+  // invalidado, y quien decide es el servidor. Por eso la confirmacion
+  // positiva sigue siendo la pantalla.
+  cookiesSesion: ["KEYCLOAK_IDENTITY", "KEYCLOAK_SESSION", "AUTH_SESSION_ID", "JSESSIONID"],
+
   // Mensaje de credenciales rechazadas. Sin verificar todavia: son los
   // contenedores estandar de Keycloak. Si el login falla sin decir por que,
   // revisar esto primero.

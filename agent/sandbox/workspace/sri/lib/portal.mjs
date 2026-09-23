@@ -1,6 +1,29 @@
 import { log } from "./runner.mjs";
 import { LOGIN, URLS } from "./selectores.mjs";
 
+/**
+ * Descarte rápido por cookies.
+ *
+ * Solo responde con certeza en NEGATIVO: sin cookie vigente no hay sesión.
+ * Lo contrario no se puede afirmar — una cookie presente puede estar
+ * invalidada del lado del servidor, que es quien decide. Por eso cuando
+ * devuelve `true` todavía hay que confirmar contra la pantalla.
+ */
+export async function hayCookiesDeSesion(contexto) {
+  const ahoraSegundos = Date.now() / 1000;
+  const cookies = await contexto.cookies();
+
+  const vigentes = cookies.filter(
+    // expires === -1 es cookie de sesión del navegador: vive mientras el
+    // contexto siga abierto, así que cuenta como vigente.
+    (c) => c.expires === -1 || c.expires > ahoraSegundos,
+  );
+
+  return vigentes.some((c) =>
+    LOGIN.cookiesSesion.some((nombre) => c.name === nombre || c.name.startsWith(nombre)),
+  );
+}
+
 /** Error de credenciales: no se debe reintentar automáticamente. */
 export class ErrorCredenciales extends Error {}
 
@@ -41,16 +64,23 @@ async function sesionActiva(page, msEspera = 12_000) {
  * tuvo que autenticarse de nuevo.
  */
 export async function asegurarSesion(page, credenciales, guardarSesion) {
-  // Al perfil y no a la home: la home publica carga con o sin sesion, asi que
-  // no sirve para saber si hay que autenticarse.
-  await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" });
+  // Descarte por cookies: si no hay ninguna vigente, no hay sesion posible y
+  // se evita una navegacion al perfil que solo puede terminar en el login.
+  if (await hayCookiesDeSesion(page.context())) {
+    // Al perfil y no a la home: la home publica carga con o sin sesion, asi
+    // que no sirve para saber si hay que autenticarse.
+    await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" });
 
-  if (await sesionActiva(page)) {
-    log("Sesión reutilizada desde el estado guardado.");
-    return false;
+    if (await sesionActiva(page)) {
+      log("Sesión reutilizada desde el estado guardado.");
+      return false;
+    }
+    log("Las cookies estaban vigentes pero el portal no reconoció la sesión.");
+  } else {
+    log("Sin cookies de sesión vigentes.");
   }
 
-  log("Sesión caducada o inexistente: autenticando.");
+  log("Autenticando.");
   await page.goto(URLS.login, { waitUntil: "domcontentloaded" });
   await page.fill(LOGIN.campoUsuario, credenciales.usuario);
   await page.fill(LOGIN.campoClave, credenciales.clave);
