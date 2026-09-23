@@ -4,3 +4,10 @@
 *.mjs text eol=lf
 deploy/Caddyfile text eol=lf
 deploy/*.service text eol=lf
+
+# Los archivos de entorno se copian tal cual a /etc/sri-agent/env. Un CRLF
+# hace que systemd deje un  al final de cada valor: la clave llega con un
+# retorno de carro invisible y el portal la rechaza como si fuera incorrecta.
+*.env text eol=lf
+.env.example text eol=lf
+.env.production.example text eol=lf
