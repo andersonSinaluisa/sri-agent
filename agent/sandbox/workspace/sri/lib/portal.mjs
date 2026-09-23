@@ -172,6 +172,54 @@ export async function clicComoPersona(page, selector) {
 export class ErrorCredenciales extends Error {}
 
 /**
+ * El portal rechazó el token de reCAPTCHA en esta pantalla.
+ *
+ * Se distingue de cualquier otro fallo porque la salida es distinta: no hay
+ * nada que arreglar en el código, y quien tiene que intervenir es una
+ * persona. Confundirlo con "no hay datos" o con "el paso no avanzó" manda a
+ * buscar el problema donde no está.
+ */
+export class ErrorCaptcha extends Error {
+  constructor(pantalla, detalle = "") {
+    super(
+      `El portal rechazó el captcha en ${pantalla}. ` +
+        "No es la sesión ni las credenciales: reCAPTCHA Enterprise puntúa la " +
+        "interacción y no acepta la de un navegador automatizado. " +
+        detalle,
+    );
+    this.name = "ErrorCaptcha";
+    this.pantalla = pantalla;
+  }
+}
+
+/**
+ * Texto de rechazo de captcha en la pantalla.
+ *
+ * Se busca el texto y no un id: el portal lo pinta en contenedores distintos
+ * según la pantalla —un growl, un diálogo o un mensaje de JSF— y el texto es
+ * lo único común. Se exige que aparezca junto a una palabra de rechazo para
+ * no confundirlo con la mención del captcha en una ayuda o un pie de página.
+ */
+export async function captchaRechazado(page) {
+  return page
+    .evaluate(() => {
+      const cuerpo = document.body?.innerText ?? "";
+      const lineas = cuerpo.split(/\r?\n/).map((l) => l.replace(/\s+/g, " ").trim());
+      const rechazo = /captcha/i;
+      const negativo = /incorrect|inv[aá]lid|err[oó]r|no v[aá]lid|fall/i;
+      const encontrada = lineas.find((l) => rechazo.test(l) && negativo.test(l));
+      return encontrada ?? null;
+    })
+    .catch(() => null);
+}
+
+/** Corta con `ErrorCaptcha` si la pantalla muestra un rechazo de captcha. */
+export async function exigirSinCaptcha(page, pantalla, detalle = "") {
+  const mensaje = await captchaRechazado(page);
+  if (mensaje !== null) throw new ErrorCaptcha(pantalla, `La pantalla dice: "${mensaje}". ${detalle}`);
+}
+
+/**
  * Hay sesion si el portal no nos mando al login. Se mira la URL y ademas la
  * ausencia del formulario, porque Keycloak a veces sirve el login sin cambiar
  * la barra de direcciones.

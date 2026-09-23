@@ -59,6 +59,31 @@ igual(
   "totales del listado",
 );
 
+// ── El formato REAL que exporta el portal ───────────────────────────────────
+//
+// Tomado de una descarga de verdad: encabezados con guion bajo y una última
+// columna (NUMERO_DOCUMENTO_MODIFICADO) que viene vacía, de modo que cada
+// línea TERMINA en tabulador. Recortar la línea antes de partirla se llevaba
+// ese separador y descartaba todas las filas por "línea corta".
+const comoElPortal = [
+  "RUC_EMISOR\tRAZON_SOCIAL_EMISOR\tTIPO_COMPROBANTE\tSERIE_COMPROBANTE\tCLAVE_ACCESO\tFECHA_AUTORIZACION\tFECHA_EMISION\tIDENTIFICACION_RECEPTOR\tVALOR_SIN_IMPUESTOS\tIVA\tIMPORTE_TOTAL\tNUMERO_DOCUMENTO_MODIFICADO",
+  "1791251237001\tCONECEL\tFactura\t001-096-035415121\t0308202601179125123700120010960354151211234567814\t03/08/2026 11:29:59\t03/08/2026\t0953227857\t9.13\t1.37\t10.5\t",
+  "0992696036001\tCOMFARMALSA\tFactura\t016-021-000620505\t2609202601099269603600120160210006205051234567813\t26/08/2026 10:15:00\t26/08/2026\t0953227857\t20.00\t0.00\t20.00\t",
+].join("\n");
+
+const portal = leerListado(comoElPortal);
+igual(portal.filas.length, 2, "lee las filas aunque terminen en separador");
+igual(portal.lineasDescartadas, [], "no descarta ninguna línea");
+igual(portal.filas[0].rucEmisor, "1791251237001", "encabezados con guion bajo");
+igual(portal.filas[0].razonSocialEmisor, "CONECEL", "razón social con guion bajo");
+igual(portal.filas[0].serie, "001-096-035415121", "SERIE_COMPROBANTE, no TIPO_COMPROBANTE");
+igual(portal.filas[0].tipoComprobante, "Factura", "TIPO_COMPROBANTE");
+igual(portal.filas[0].fechaEmision, "03/08/2026", "FECHA_EMISION y no FECHA_AUTORIZACION");
+igual(portal.filas[0].subtotalCentavos, 913, "VALOR_SIN_IMPUESTOS");
+igual(portal.filas[0].ivaCentavos, 137, "columna IVA a secas");
+igual(portal.filas[0].totalCentavos, 1_050, "10.5 con un solo decimal -> 1050 centavos");
+igual(portal.filasDescuadradas, 0, "9.13 + 1.37 = 10.50 cuadra");
+
 // ── Mismo contenido, otro separador y otro orden de columnas ────────────────
 const conPipe = [
   "Importe Total|Valor IVA|Valor sin impuestos|Fecha Emisión|Razón Social|RUC Emisor",

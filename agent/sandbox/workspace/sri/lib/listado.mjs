@@ -112,10 +112,14 @@ function mapearColumnas(encabezados) {
  * @param {string} contenido  el archivo tal cual, ya decodificado a texto
  */
 export function leerListado(contenido) {
-  const lineas = contenido
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l !== "");
+  // OJO: las líneas NO se recortan.
+  //
+  // El listado del SRI termina en una columna que suele venir vacía
+  // (`NUMERO_DOCUMENTO_MODIFICADO`), así que la línea acaba en separador.
+  // Recortarla se lleva ese separador, la fila queda con una columna menos
+  // que el encabezado y el control de línea corta la descarta. Con el archivo
+  // real eso descartaba las 17 filas y devolvía un período vacío.
+  const lineas = contenido.split(/\r?\n/).filter((l) => l.trim() !== "");
 
   if (lineas.length === 0) throw new Error("El listado está vacío.");
 

@@ -7,6 +7,7 @@ import {
   aCentavos,
   calentarPantalla,
   clicComoPersona,
+  ErrorCaptcha,
   exigirPantalla,
 } from "./lib/portal.mjs";
 import { esperarAjax } from "./lib/primefaces.mjs";
@@ -132,11 +133,15 @@ await ejecutar(
     // adquisiciones y la declaración saldría mal, sin que nada lo avise. Mejor
     // fallar fuerte y que una persona resuelva la consulta.
     if (filasEnPantalla === 0 && captchaRechazado) {
-      throw new Error(
-        `El portal rechazó el captcha de la consulta en ${MAX_CONSULTAS} intentos, así que ` +
-          `NO se sabe si el período ${anio}-${String(mes).padStart(2, "0")} tiene comprobantes. ` +
-          "No se devuelve una lista vacía a propósito: liquidar con eso produciría una " +
-          "declaración incorrecta. Consultá el período en el portal a mano.",
+      const sufijo = `${anio}-${String(mes).padStart(2, "0")}`;
+      throw new ErrorCaptcha(
+        "la consulta de comprobantes recibidos",
+        `Se intentó ${MAX_CONSULTAS} veces, así que NO se sabe si el período ${sufijo} ` +
+          "tiene comprobantes. No se devuelve una lista vacía a propósito: liquidar con " +
+          "eso daría una declaración sin crédito tributario y se presentaría igual. " +
+          "La salida es el archivo: entrá al portal, hacé la consulta, tocá " +
+          `"Descargar reporte" y guardalo como "listado-${sufijo}.txt" en el directorio ` +
+          "de datos. El flujo lo lee de ahí y sigue solo.",
       );
     }
 

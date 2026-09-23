@@ -1,5 +1,11 @@
 import { log } from "./runner.mjs";
-import { aCentavos, clicComoPersona, deCentavos, exigirPantalla } from "./portal.mjs";
+import {
+  aCentavos,
+  clicComoPersona,
+  deCentavos,
+  exigirPantalla,
+  exigirSinCaptcha,
+} from "./portal.mjs";
 import { elegirOpcion, escribirPeriodo, esperarAjax } from "./primefaces.mjs";
 import { casillerosVisibles, mapearCasilleros } from "./casilleros.mjs";
 import { DECLARACION_104, URLS } from "./selectores.mjs";
@@ -46,6 +52,10 @@ export async function abrirPeriodo(page, periodo, periodicidad = "mensual") {
   log(`Paso actual tras elegir el período: ${pasoActual}`);
 
   if (!avanzo) {
+    // El captcha primero: si es eso, el resto del diagnóstico sobra y manda a
+    // buscar el problema en el período, que no tiene nada que ver.
+    await exigirSinCaptcha(page, "el paso 1 del Formulario 104");
+
     // El paso 1 se queda quieto sin decir nada cuando el período no está
     // disponible para declarar: ya presentado, fuera del rango de la
     // obligación, o todavía no habilitado. Se mira la pantalla y se informa,
@@ -333,6 +343,9 @@ export async function escribirCasilleros(page, casilleros) {
     // que nada avise.
     const quedo = await campo.inputValue();
     if (normalizarNumero(quedo) !== normalizarNumero(valor)) {
+      // Un casillero que no toma el valor puede ser el widget… o el portal
+      // rechazando la interacción entera.
+      await exigirSinCaptcha(page, `el casillero ${casillero} del Formulario 104`);
       throw new Error(
         `El casillero ${casillero} (${destino.etiqueta ?? "sin descripción"}) quedó en ` +
           `"${quedo}" y se pidió "${valor}". No se sigue llenando: una declaración con ` +
@@ -477,6 +490,8 @@ export async function saltarAFormularioCompleto(page) {
   // lado equivocado.
   const pasoPrevio = await pasoResaltado(page);
   const avanzo = await avanzarPaso(page, DECLARACION_104.enlaceFormularioCompletoDesdePreguntas, pasoPrevio);
+
+  if (!avanzo) await exigirSinCaptcha(page, "el paso 2 del Formulario 104");
 
   log(`Paso tras saltar el cuestionario: ${await pasoResaltado(page)}`);
   return avanzo;
