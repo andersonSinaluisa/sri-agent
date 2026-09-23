@@ -19,7 +19,11 @@
     "web:dev": "vite",
     "web:build": "vite build",
     "sri:inspeccionar": "node agent/sandbox/workspace/sri/inspeccionar.mjs",
-    "test:selectores": "node evals/selectores.smoke.mjs"
+    "test:selectores": "node evals/selectores.smoke.mjs",
+    "test:listado": "node evals/listado.smoke.mjs",
+    "test:casilleros": "node evals/casilleros.smoke.mjs",
+    "test:compras": "node --experimental-strip-types evals/compras.smoke.mts",
+    "test:mapa104": "node evals/mapa104.smoke.mjs"
   },
   "dependencies": {
     "@vercel/connect": "2.2.0",

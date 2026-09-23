@@ -1,6 +1,6 @@
 import { log } from "./runner.mjs";
-import { aCentavos, deCentavos, exigirPantalla } from "./portal.mjs";
-import { elegirOpcion, escribirPeriodo } from "./primefaces.mjs";
+import { aCentavos, clicComoPersona, deCentavos, exigirPantalla } from "./portal.mjs";
+import { elegirOpcion, escribirPeriodo, esperarAjax } from "./primefaces.mjs";
 import { casillerosVisibles, mapearCasilleros } from "./casilleros.mjs";
 import { DECLARACION_104, URLS } from "./selectores.mjs";
 
@@ -39,12 +39,92 @@ export async function abrirPeriodo(page, periodo, periodicidad = "mensual") {
     `${String(periodo.mes).padStart(2, "0")}/${periodo.anio}`,
   );
 
-  await page.click(DECLARACION_104.botonSiguientePeriodo);
-  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+  const pasoPrevio = await pasoResaltado(page);
+  const avanzo = await avanzarPaso(page, DECLARACION_104.botonSiguientePeriodo, pasoPrevio);
 
   const pasoActual = await pasoResaltado(page);
   log(`Paso actual tras elegir el período: ${pasoActual}`);
+
+  if (!avanzo) {
+    // El paso 1 se queda quieto sin decir nada cuando el período no está
+    // disponible para declarar: ya presentado, fuera del rango de la
+    // obligación, o todavía no habilitado. Se mira la pantalla y se informa,
+    // en vez de dejar que falle más adelante con un error que no orienta.
+    const mensajes = await leerMensajes(page);
+    const dichos = [...mensajes.errores, ...mensajes.advertencias];
+    const rango = await rangoDeLaObligacion(page);
+    const anteriores = await declaracionesAnteriores(page);
+
+    throw new Error(
+      `El portal no avanzó del paso "${pasoActual}" con obligación "${texto}" y ` +
+        `período ${String(periodo.mes).padStart(2, "0")}/${periodo.anio}. ` +
+        (dichos.length > 0
+          ? `La pantalla dice: ${dichos.join(" | ")}. `
+          : "La pantalla no muestra ningún mensaje. ") +
+        (rango !== null ? `La obligación rige ${rango}. ` : "") +
+        (anteriores !== null
+          ? `El período ya tiene declaraciones presentadas: ${anteriores} — ` +
+            "lo que corresponde entonces es una sustitutiva, que este flujo no maneja. "
+          : "") +
+        "Probá con un período no declarado, o abrí el formulario a mano para ver qué ofrece.",
+    );
+  }
+
   return { pasoActual, url: page.url() };
+}
+
+/**
+ * Hace clic en un botón de avance y espera a que el paso CAMBIE de verdad.
+ *
+ * No alcanza con esperar el AJAX: el portal responde igual cuando acepta el
+ * avance y cuando lo rechaza en silencio, así que lo único que distingue un
+ * caso del otro es el paso resaltado. Y el clic va con movimiento de puntero
+ * porque este formulario, como la consulta de comprobantes, ignora un clic
+ * instantáneo en el centro exacto del botón.
+ */
+async function avanzarPaso(page, selector, pasoPrevio, intentos = 2) {
+  for (let intento = 1; intento <= intentos; intento += 1) {
+    if (intento > 1) log(`El paso no cambió; reintento ${intento} de ${intentos}.`);
+
+    try {
+      await clicComoPersona(page, selector);
+    } catch (error) {
+      // Si el control ya no está, lo más probable es que el clic anterior sí
+      // funcionara y el portal haya repintado: se comprueba antes de darlo
+      // por fallado.
+      if ((await pasoResaltado(page)) !== pasoPrevio) return true;
+      throw error;
+    }
+    await esperarAjax(page);
+
+    // Hasta 15 s mirando si el paso resaltado cambió.
+    for (let espera = 0; espera < 30; espera += 1) {
+      if ((await pasoResaltado(page)) !== pasoPrevio) return true;
+      await page.waitForTimeout(500);
+    }
+  }
+  return false;
+}
+
+/** El rango de fechas que el portal muestra para la obligación elegida. */
+async function rangoDeLaObligacion(page) {
+  const leer = async (selector) =>
+    (await page.locator(selector).count()) > 0
+      ? (await page.locator(selector).innerText()).replace(/\s+/g, " ").trim()
+      : "";
+
+  const desde = await leer(DECLARACION_104.obligacionFechaInicio);
+  const hasta = await leer(DECLARACION_104.obligacionFechaFin);
+  if (desde === "" && hasta === "") return null;
+  return `desde ${desde || "?"} hasta ${hasta || "sin fecha de fin"}`;
+}
+
+/** Qué declaraciones ya presentadas muestra el portal para este período. */
+async function declaracionesAnteriores(page) {
+  const panel = page.locator(DECLARACION_104.declaracionesAnteriores);
+  if ((await panel.count()) === 0) return null;
+  const texto = (await panel.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+  return texto === "" ? null : texto.slice(0, 200);
 }
 
 /** Cuál de los cuatro pasos está resaltado. */
@@ -126,11 +206,84 @@ export async function leerMensajes(page) {
   };
 }
 
+/** Para comparar "1200.00" con "1.200,00" sin que el formato moleste. */
+function normalizarNumero(texto) {
+  const limpio = String(texto ?? "").trim();
+  if (limpio === "") return "";
+  return String(aCentavos(limpio));
+}
+
+/**
+ * Cuántos decimales usa un casillero, leídos de lo que el propio campo
+ * muestra. El 104 mezcla tres tipos de campo y no lo declara en ningún lado:
+ *
+ *   "0"       conteo de comprobantes (111, 113, 115, 117, 119, 486)
+ *   "0.00"    importes
+ *   "0.0000"  el factor de proporcionalidad (563), que no es dinero
+ */
+export function decimalesDe(valorActual) {
+  const coincidencia = String(valorActual ?? "").match(/[.,](\d+)\s*$/);
+  return coincidencia === null ? 0 : coincidencia[1].length;
+}
+
+/**
+ * Da el texto a escribir en un casillero, según el tipo de campo que sea.
+ *
+ * No todos los casilleros son dinero, y tratarlos a todos como centavos
+ * escribía "0.42" donde iban 42 comprobantes. Cuando el campo no lleva
+ * decimales, el número es una CANTIDAD y se escribe tal cual.
+ */
+export function formatearCasillero(casillero, valor, valorActual) {
+  if (!Number.isInteger(valor)) {
+    throw new Error(`El casillero ${casillero} recibió ${valor}, que no es un entero.`);
+  }
+
+  const decimales = decimalesDe(valorActual);
+
+  if (decimales === 2) return { valor: deCentavos(valor), tipo: "importe" };
+
+  if (decimales === 0) {
+    if (valor < 0) {
+      throw new Error(`El casillero ${casillero} es un conteo y no admite ${valor}.`);
+    }
+    return { valor: String(valor), tipo: "conteo" };
+  }
+
+  // El factor de proporcionalidad y cualquier otro campo con otra precisión:
+  // no son importes, no hay contrato para escribirlos y el portal los
+  // calcula. Antes que inventar una conversión, se corta.
+  throw new Error(
+    `El casillero ${casillero} usa ${decimales} decimales (muestra "${valorActual}"), ` +
+      "así que no es un importe en centavos. Este flujo no lo escribe.",
+  );
+}
+
+/**
+ * Escribe un número tecleándolo, no asignándolo.
+ *
+ * Los campos del 104 son widgets que mantienen su propio estado y postean un
+ * input oculto. `page.fill()` asigna el valor visible y dispara un `input`,
+ * pero el widget puede no enterarse: el formulario se ve correcto en la
+ * captura y la declaración se presenta en ceros. Tecleando pasa por el mismo
+ * camino que una persona.
+ */
+async function escribirNumero(page, selector, valor) {
+  const campo = page.locator(selector);
+  await campo.click();
+  await campo.press("Control+a").catch(() => {});
+  await campo.press("Delete").catch(() => {});
+  await campo.pressSequentially(valor, { delay: 15 });
+  // `blur` es lo que dispara la validación y el recálculo del portal.
+  await campo.press("Tab").catch(() => {});
+  await esperarAjax(page);
+}
+
 /**
  * Escribe los casilleros en el formulario ya abierto en el paso 3.
  * NO presenta nada.
  *
  * @param {Record<string, number>} casilleros  numero de casillero -> centavos
+ *   (o la cantidad, en los casilleros de conteo, que no llevan decimales)
  */
 export async function escribirCasilleros(page, casilleros) {
   await abrirFormularioCompleto(page);
@@ -154,9 +307,46 @@ export async function escribirCasilleros(page, casilleros) {
       );
     }
 
-    const valor = deCentavos(centavos);
-    await page.fill(destino.selector, valor);
-    escritos.push({ casillero, valor, selector: destino.selector, etiqueta: destino.etiqueta });
+    const campo = page.locator(destino.selector);
+    if ((await campo.count()) === 0) {
+      throw new Error(
+        `El casillero ${casillero} (${destino.etiqueta ?? "sin descripción"}) no tiene ` +
+          `un campo escribible en ${destino.selector}.`,
+      );
+    }
+
+    // Los casilleros que calcula el portal vienen de solo lectura. Escribir
+    // uno de esos no da error: el valor simplemente no queda, y la
+    // declaración sale con lo que el portal haya calculado.
+    if (!(await campo.isEditable().catch(() => false))) {
+      throw new Error(
+        `El casillero ${casillero} (${destino.etiqueta ?? "sin descripción"}) es de solo ` +
+          "lectura: lo calcula el portal a partir de los demás. No se escribe.",
+      );
+    }
+
+    const { valor, tipo } = formatearCasillero(casillero, centavos, await campo.inputValue());
+    await escribirNumero(page, destino.selector, valor);
+
+    // Se relee SIEMPRE. Es el único control que detecta que un widget
+    // ignoró la escritura, que es como una declaración sale en ceros sin
+    // que nada avise.
+    const quedo = await campo.inputValue();
+    if (normalizarNumero(quedo) !== normalizarNumero(valor)) {
+      throw new Error(
+        `El casillero ${casillero} (${destino.etiqueta ?? "sin descripción"}) quedó en ` +
+          `"${quedo}" y se pidió "${valor}". No se sigue llenando: una declaración con ` +
+          "un casillero que no tomó el valor sale mal y se presenta igual.",
+      );
+    }
+
+    escritos.push({
+      casillero,
+      valor,
+      tipo,
+      selector: destino.selector,
+      etiqueta: destino.etiqueta,
+    });
   }
 
   log(`Casilleros escritos: ${escritos.length}`);
@@ -280,10 +470,16 @@ export async function responderPreguntas(page, respuestas) {
 export async function saltarAFormularioCompleto(page) {
   const enlace = page.locator(DECLARACION_104.enlaceFormularioCompletoDesdePreguntas);
   if ((await enlace.count()) === 0) return false;
-  await enlace.click();
-  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
+
+  // Igual que en el paso 1: se confirma que el paso resaltado CAMBIÓ. Este
+  // salto repinta el formulario entero y es de los que más tardan, así que
+  // sin esa confirmación se lee la pantalla anterior y el error apunta al
+  // lado equivocado.
+  const pasoPrevio = await pasoResaltado(page);
+  const avanzo = await avanzarPaso(page, DECLARACION_104.enlaceFormularioCompletoDesdePreguntas, pasoPrevio);
+
   log(`Paso tras saltar el cuestionario: ${await pasoResaltado(page)}`);
-  return true;
+  return avanzo;
 }
 
 /** Flujo completo hasta el formulario lleno, sin presentar. */

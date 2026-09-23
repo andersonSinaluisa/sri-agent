@@ -95,6 +95,79 @@ async function escribirComoPersona(page, selector, texto, nombreCampo) {
   }
 }
 
+/** Un entero entre `min` y `max`, para que dos acciones no salgan idénticas. */
+function entre(min, max) {
+  return Math.floor(min + Math.random() * (max - min));
+}
+
+/**
+ * Deja rastro de puntero en la página antes de operar sobre ella.
+ *
+ * reCAPTCHA Enterprise puntúa la INTERACCIÓN, no el navegador. Una pantalla
+ * en la que nunca se movió el puntero, nunca hubo desplazamiento y el único
+ * evento es un clic instantáneo es exactamente el perfil que rechaza. Se
+ * llama al abrir la pantalla, para que cuando llegue el clic ya haya historia.
+ */
+export async function calentarPantalla(page) {
+  const tamano = page.viewportSize() ?? { width: 1280, height: 800 };
+
+  for (let i = 0; i < 3; i += 1) {
+    await page.mouse.move(entre(80, tamano.width - 80), entre(80, tamano.height - 80), {
+      steps: entre(8, 18),
+    });
+    await page.waitForTimeout(entre(90, 260));
+  }
+
+  await page.mouse.wheel(0, entre(120, 320));
+  await page.waitForTimeout(entre(200, 450));
+}
+
+/**
+ * Hace clic como una persona: se acerca al control en varios tramos, lo
+ * sobrevuela un momento y recién ahí presiona y suelta.
+ *
+ * `page.click()` teletransporta el puntero al centro exacto del elemento y
+ * presiona en el mismo instante. Para el control de la consulta del SRI —que
+ * envía un token de reCAPTCHA Enterprise con el formulario— eso se traduce en
+ * "captcha inválido", y el portal contesta como si no hubiera datos. Con el
+ * MISMO navegador, un clic hecho a mano pasa: lo que falta no es una
+ * credencial ni otro User-Agent, es el movimiento.
+ *
+ * No se falsifica ninguna señal: se produce de verdad la interacción que el
+ * control espera, sobre la cuenta del propio contribuyente.
+ */
+export async function clicComoPersona(page, selector) {
+  const control = page.locator(selector);
+  await control.scrollIntoViewIfNeeded();
+  await control.waitFor({ state: "visible", timeout: 20_000 });
+
+  const caja = await control.boundingBox();
+  if (caja === null) {
+    // Sin geometría no hay nada que simular; vale más un clic normal que un
+    // fallo, y el control puede estar igualmente operativo.
+    await control.click();
+    return;
+  }
+
+  // Un punto cualquiera dentro del control, no su centro exacto.
+  const destinoX = caja.x + entre(Math.round(caja.width * 0.3), Math.round(caja.width * 0.7));
+  const destinoY = caja.y + entre(Math.round(caja.height * 0.3), Math.round(caja.height * 0.7));
+
+  // Se llega en dos tramos, con una parada intermedia: el puntero de una
+  // persona no viaja en línea recta de un extremo al control.
+  await page.mouse.move(destinoX - entre(60, 200), destinoY - entre(40, 140), {
+    steps: entre(10, 20),
+  });
+  await page.waitForTimeout(entre(80, 200));
+  await page.mouse.move(destinoX, destinoY, { steps: entre(12, 25) });
+
+  // Sobrevuelo antes de presionar, y presión sostenida un instante.
+  await page.waitForTimeout(entre(180, 420));
+  await page.mouse.down();
+  await page.waitForTimeout(entre(50, 130));
+  await page.mouse.up();
+}
+
 /** Error de credenciales: no se debe reintentar automáticamente. */
 export class ErrorCredenciales extends Error {}
 

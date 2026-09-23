@@ -138,7 +138,14 @@ export async function ejecutar(nombre, paso) {
     args.push("--no-sandbox");
   }
 
-  const navegador = await chromium.launch({ headless: true, args });
+  // Por defecto headless, que es como corre en el servidor. El banco de
+  // pruebas levanta la ventana con SRI_VISIBLE=1 para poder mirar el portal;
+  // sin la variable el comportamiento es identico al de produccion.
+  const navegador = await chromium.launch({
+    headless: process.env.SRI_VISIBLE !== "1",
+    slowMo: Number(process.env.SRI_LENTO ?? 0),
+    args,
+  });
 
   const archivoSesion = rutaSesion(credenciales.ruc);
   const contexto = await navegador.newContext({

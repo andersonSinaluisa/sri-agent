@@ -114,7 +114,17 @@ export const COMPROBANTES = {
   // PrimeFaces DataTable: las filas viven en el tbody con sufijo _data.
   filasResultados: '[id="frmPrincipal:tablaCompRecibidos_data"] tr[data-ri]',
   enlaceDescargarListado: '[id="frmPrincipal:lnkTxtlistado"]',
-  mensajeSinResultados: "text=No se encontraron registros",
+  // El portal usa dos textos distintos segun la pantalla: "No existen datos
+  // para los parametros ingresados" en la consulta de recibidos y "No se
+  // encontraron registros" en las tablas de PrimeFaces. Se aceptan los dos:
+  // leer mal este mensaje convierte "el periodo no tiene comprobantes" en
+  // "no supe leer la tabla", que son dos cosas muy distintas.
+  mensajeSinResultados: "text=/No existen datos|No se encontraron registros/i",
+
+  // El portal avisa cuando el token de reCAPTCHA no le sirvio. Distinguirlo
+  // es critico: si se confunde con "no hay comprobantes", el periodo entra a
+  // la liquidacion con cero credito tributario y la declaracion sale mal.
+  mensajeCaptcha: "text=/captcha/i",
 };
 
 /**
@@ -163,6 +173,16 @@ export const DECLARACION_104 = {
   campoPeriodo: "frmFlujoDeclaracion:calPeriodo",
 
   botonSiguientePeriodo: '[id="frmFlujoDeclaracion:btnObligacionSiguiente"]',
+
+  // Vigencia de la obligacion elegida. Sirve para explicar por que el portal
+  // no deja avanzar con un periodo: fuera de este rango no hay declaracion
+  // que presentar, y la pantalla no lo dice con un mensaje.
+  obligacionFechaInicio: '[id="frmFlujoDeclaracion:obligacionFechaInicio"]',
+  obligacionFechaFin: '[id="frmFlujoDeclaracion:obligacionFechaFin"]',
+
+  // Declaraciones ya presentadas del periodo elegido. Si trae algo, lo que
+  // corresponde es una sustitutiva y no una declaracion original.
+  declaracionesAnteriores: '[id="frmFlujoDeclaracion:oupnlDeclaracionesAnteriores"]',
 
   pasos: '[id="formPasosDeclaracion:pasosDeclaracion"] .ui-steps-item',
   mensajes: '[id="mensajePrincipal"]',

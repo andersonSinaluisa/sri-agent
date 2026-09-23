@@ -2,9 +2,50 @@
 // Entrada: { anio: number, mes: number, tipoComprobante?: string }
 // Salida:  { periodo, filas: [...], archivoListado }
 import { ejecutar, log } from "./lib/runner.mjs";
-import { asegurarSesion, aCentavos, exigirPantalla } from "./lib/portal.mjs";
+import {
+  asegurarSesion,
+  aCentavos,
+  calentarPantalla,
+  clicComoPersona,
+  exigirPantalla,
+} from "./lib/portal.mjs";
+import { esperarAjax } from "./lib/primefaces.mjs";
 import { COLUMNAS_COMPROBANTES, COMPROBANTES, URLS } from "./lib/selectores.mjs";
 import { join } from "node:path";
+
+/**
+ * Elige una opción y espera a que el portal termine de repintarse.
+ *
+ * Cada desplegable de esta pantalla dispara un AJAX de JSF al cambiar, y el
+ * servidor repinta los demás. Encadenar los cuatro cambios sin esperar dejaba
+ * la pantalla mostrando lo correcto pero el servidor consultando otra cosa:
+ * de ahí "No existen datos" con los filtros bien puestos.
+ */
+async function elegir(page, selector, valor) {
+  await page.selectOption(selector, valor);
+  await esperarAjax(page);
+}
+
+/**
+ * Espera a que reCAPTCHA Enterprise esté listo.
+ *
+ * El botón de consultar llama a `executeRecaptcha(...)` antes de enviar. Si
+ * se hace clic antes de que el script termine de cargar, el envío sale sin
+ * token y el portal contesta como si no hubiera datos.
+ */
+async function esperarRecaptcha(page) {
+  await page
+    .waitForFunction(
+      () => {
+        const g = /** @type {any} */ (window).grecaptcha;
+        // Si la pantalla no usa reCAPTCHA, no hay nada que esperar.
+        return g === undefined || typeof (g.enterprise ?? g).execute === "function";
+      },
+      undefined,
+      { timeout: 20_000 },
+    )
+    .catch(() => {});
+}
 
 /** "0992696036001\nCOMFARMALSA S.A." -> { ruc, razonSocial } */
 function partirEmisor(celda) {
@@ -41,18 +82,80 @@ await ejecutar(
       .catch(() => {});
     await exigirPantalla(page, COMPROBANTES.selectAnio, "comprobantes recibidos");
 
-    await page.selectOption(COMPROBANTES.selectAnio, String(anio));
-    await page.selectOption(COMPROBANTES.selectMes, String(mes));
-    await page.selectOption(COMPROBANTES.selectDia, "0"); // 0 = todo el mes
-    await page.selectOption(COMPROBANTES.selectTipoComprobante, String(tipoComprobante));
+    // Antes de tocar nada: que la pantalla tenga historia de interacción. El
+    // botón de consultar envía un token de reCAPTCHA Enterprise que puntúa
+    // justamente eso.
+    await calentarPantalla(page);
 
-    await page.click(COMPROBANTES.botonConsultar);
-    // La consulta pasa por reCAPTCHA Enterprise y vuelve por AJAX.
-    await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
+    // El orden importa: el mes repuebla el día, así que va antes.
+    await elegir(page, COMPROBANTES.selectAnio, String(anio));
+    await elegir(page, COMPROBANTES.selectMes, String(mes));
+    await elegir(page, COMPROBANTES.selectDia, "0"); // 0 = todo el mes
+    await elegir(page, COMPROBANTES.selectTipoComprobante, String(tipoComprobante));
 
-    if (await page.locator(COMPROBANTES.mensajeSinResultados).count()) {
-      log("El período no tiene comprobantes recibidos.");
-      return { periodo: { anio, mes }, filas: [], archivoListado: null };
+    await esperarRecaptcha(page);
+
+    // Consultar de nuevo si vuelve vacía.
+    //
+    // Es una consulta de solo lectura: repetirla no cambia nada en el portal
+    // ni arriesga la cuenta, a diferencia del login. Y hace falta porque el
+    // token de reCAPTCHA puede salir rechazado, y entonces el portal contesta
+    // como si el período estuviera vacío aunque los filtros estén bien.
+    const MAX_CONSULTAS = 3;
+    let filasEnPantalla = 0;
+    let captchaRechazado = false;
+
+    for (let intento = 1; intento <= MAX_CONSULTAS; intento += 1) {
+      if (intento > 1) {
+        log(
+          `La consulta volvió vacía${captchaRechazado ? " (captcha rechazado)" : ""}; ` +
+            `reintento ${intento} de ${MAX_CONSULTAS}.`,
+        );
+        // Más interacción antes de volver a intentar: si lo que falló fue el
+        // puntaje del token, repetir el mismo gesto da el mismo resultado.
+        await calentarPantalla(page);
+      }
+
+      await clicComoPersona(page, COMPROBANTES.botonConsultar);
+      await esperarAjax(page);
+      await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
+
+      filasEnPantalla = await page.locator(COMPROBANTES.filasResultados).count();
+      captchaRechazado = (await page.locator(COMPROBANTES.mensajeCaptcha).count()) > 0;
+      if (filasEnPantalla > 0) break;
+    }
+
+    // Un captcha rechazado NO es un período vacío.
+    //
+    // Devolver una lista vacía acá sería lo más peligroso que puede hacer este
+    // script: el período entraría a la liquidación sin crédito tributario por
+    // adquisiciones y la declaración saldría mal, sin que nada lo avise. Mejor
+    // fallar fuerte y que una persona resuelva la consulta.
+    if (filasEnPantalla === 0 && captchaRechazado) {
+      throw new Error(
+        `El portal rechazó el captcha de la consulta en ${MAX_CONSULTAS} intentos, así que ` +
+          `NO se sabe si el período ${anio}-${String(mes).padStart(2, "0")} tiene comprobantes. ` +
+          "No se devuelve una lista vacía a propósito: liquidar con eso produciría una " +
+          "declaración incorrecta. Consultá el período en el portal a mano.",
+      );
+    }
+
+    // Las filas mandan sobre el mensaje: el aviso de un intento anterior puede
+    // seguir en pantalla aunque el reintento ya haya traído resultados.
+    //
+    // `sinDatos` distingue dos situaciones que producen la misma lista vacia:
+    // que el portal diga que no hay nada, o que la tabla no se haya podido
+    // leer. La primera es un resultado; la segunda es una falla silenciosa.
+    if (filasEnPantalla === 0) {
+      const loDice = (await page.locator(COMPROBANTES.mensajeSinResultados).count()) > 0;
+      log(
+        loDice
+          ? `El portal informa que el período no tiene comprobantes de ese tipo ` +
+            `(${MAX_CONSULTAS} consultas).`
+          : `La tabla quedó vacía y el portal no dijo que no hubiera datos ` +
+            `(${MAX_CONSULTAS} consultas). Verificá el período a mano.`,
+      );
+      return { periodo: { anio, mes }, filas: [], archivoListado: null, sinDatos: loDice };
     }
 
     const celdasPorFila = await page
@@ -109,6 +212,7 @@ await ejecutar(
       filas: comprobantes,
       archivoListado,
       filasDescuadradas: descuadradas.length,
+      sinDatos: false,
     };
   },
 );

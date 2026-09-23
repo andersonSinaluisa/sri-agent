@@ -91,23 +91,63 @@ export async function escribirPeriodo(page, idCampo, mmYYYY) {
 }
 
 /**
+ * El diálogo "Espere por favor" que el portal muestra mientras procesa.
+ *
+ * Es la señal más confiable de que hay trabajo en curso, porque la pone el
+ * propio portal. Su id es generado por JSF (`j_idt324`) y cambia con
+ * cualquier recompilación, así que se lo busca por la clase que le da el
+ * tema: `ajax-style` sobre un `ui-dialog`.
+ */
+const DIALOGO_CARGANDO = ".ui-dialog.ajax-style";
+
+/**
  * Espera a que terminen las peticiones AJAX de PrimeFaces.
  *
  * El portal repinta por AJAX en casi cada interacción; sin esperar se lee el
  * DOM viejo y el paso siguiente falla con un error que no dice nada.
+ *
+ * Se espera por TRES señales, porque ninguna alcanza sola:
+ *
+ *  - El diálogo "Espere por favor". Es la que de verdad manda: se vio al
+ *    portal con la petición en vuelo y el spinner encima mientras las otras
+ *    dos ya daban vía libre.
+ *  - La cola de PrimeFaces, que sólo guarda las peticiones ENCOLADAS: la que
+ *    está en vuelo ya salió de ahí, así que da "listo" demasiado pronto.
+ *  - `networkidle`, que en este portal se alcanza con conexiones de fondo
+ *    todavía abiertas.
  */
 export async function esperarAjax(page) {
+  // Un respiro para que el diálogo alcance a aparecer: comprobar que no está
+  // justo después del clic siempre daría "no hay nada esperando".
+  await page.waitForTimeout(300);
+
+  await page
+    .waitForFunction(
+      (selector) =>
+        [...document.querySelectorAll(selector)].every((dialogo) => {
+          const estilo = getComputedStyle(dialogo);
+          return (
+            estilo.display === "none" ||
+            estilo.visibility === "hidden" ||
+            /** @type {HTMLElement} */ (dialogo).offsetParent === null
+          );
+        }),
+      DIALOGO_CARGANDO,
+      { timeout: 90_000 },
+    )
+    .catch(() => {});
+
   await page
     .waitForFunction(
       () => {
         const pf = /** @type {any} */ (window).PrimeFaces;
-        // `ajaxStack` guarda las peticiones en curso. Si PrimeFaces no está
-        // cargado todavía, no hay nada que esperar.
+        // Si PrimeFaces no está cargado todavía, no hay nada que esperar.
         return pf === undefined || (pf.ajax?.Queue?.requests?.length ?? 0) === 0;
       },
       undefined,
       { timeout: 30_000 },
     )
     .catch(() => {});
+
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 }
