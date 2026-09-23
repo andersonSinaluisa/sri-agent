@@ -62,6 +62,12 @@ export const LOGIN = {
   // La home publica ofrece "Iniciar sesion"; el perfil no.
   marcaSesionAusente: "text=Iniciar sesión",
 
+  // Cliente OIDC que sirve /sri-en-linea/ (el perfil del contribuyente).
+  // El nombre enganya: NO es una app de cambio de clave. Tras autenticar en
+  // /tuportal-internet/, el portal encadena un flujo nuevo contra este
+  // cliente con redirect_uri al perfil.
+  appPerfil: "app-sri-claves-angular",
+
   // Cookies que sostienen la sesion. Sirven como DESCARTE: sin ninguna
   // vigente no hay sesion y se va derecho al login, sin navegar al perfil.
   //
@@ -69,7 +75,11 @@ export const LOGIN = {
   // viva. Keycloak la deja en el navegador aunque el servidor ya la haya
   // invalidado, y quien decide es el servidor. Por eso la confirmacion
   // positiva sigue siendo la pantalla.
-  cookiesSesion: ["KEYCLOAK_IDENTITY", "KEYCLOAK_SESSION", "AUTH_SESSION_ID", "JSESSIONID"],
+  // SOLO las que Keycloak emite DESPUES de autenticar. Comprobado con el
+  // banco de pruebas: al abrir el login, sin credenciales, el portal ya deja
+  // AUTH_SESSION_ID, KC_RESTART y JSESSIONID. Incluirlas hacia que el descarte
+  // dijera "hay sesion" con solo visitar la pagina.
+  cookiesSesion: ["KEYCLOAK_IDENTITY", "KEYCLOAK_SESSION"],
 
   // Mensaje de credenciales rechazadas. Sin verificar todavia: son los
   // contenedores estandar de Keycloak. Si el login falla sin decir por que,

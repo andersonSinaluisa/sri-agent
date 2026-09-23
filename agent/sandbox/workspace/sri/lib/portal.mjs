@@ -107,16 +107,14 @@ async function sesionActiva(page, msEspera = 12_000) {
   // En el realm de Keycloak no hay sesion, sin mas que mirar.
   if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
 
-  // Marca POSITIVA: no alcanza con no ver el formulario de login, porque la
-  // home publica —a donde redirige el portal cuando caduca la sesion—
-  // tampoco lo tiene.
-  //
-  // Y se ESPERA a que aparezca en vez de contarla al instante: el perfil es
-  // una pagina Angular y el componente se monta despues del domcontentloaded.
-  // Un count() inmediato lee 0 y concluye que no hay sesion aunque si la haya.
-  // Compiten las dos marcas: la que solo existe con sesion y la que solo
-  // existe sin ella. Gana la primera que aparezca, asi que resuelve rapido en
-  // ambos sentidos en vez de agotar el tiempo de espera cuando no hay sesion.
+  // La cookie de identidad de Keycloak es la señal autoritativa y no depende
+  // del DOM de ninguna pantalla. Se emite al autenticar y se borra al cerrar
+  // sesion, asi que basta con mirarla donde sea que estemos parados.
+  if (await hayCookiesDeSesion(page.context())) return true;
+
+  // Sin la cookie, se da una oportunidad a la marca de pantalla por si el
+  // portal aun no la escribio, compitiendo contra el boton de iniciar sesion
+  // para no agotar la espera cuando efectivamente no hay sesion.
   return Promise.race([
     page
       .waitForSelector(LOGIN.marcaSesionActiva, { state: "attached", timeout: msEspera })
@@ -135,21 +133,13 @@ async function sesionActiva(page, msEspera = 12_000) {
  * tuvo que autenticarse de nuevo.
  */
 export async function asegurarSesion(page, credenciales, guardarSesion) {
-  // Descarte por cookies: si no hay ninguna vigente, no hay sesion posible y
-  // se evita una navegacion al perfil que solo puede terminar en el login.
+  // Si la cookie de identidad de Keycloak sigue viva, la sesion sirve y no
+  // hace falta navegar a ningun lado para comprobarlo.
   if (await hayCookiesDeSesion(page.context())) {
-    // Al perfil y no a la home: la home publica carga con o sin sesion, asi
-    // que no sirve para saber si hay que autenticarse.
-    await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" });
-
-    if (await sesionActiva(page)) {
-      log("Sesión reutilizada desde el estado guardado.");
-      return false;
-    }
-    log("Las cookies estaban vigentes pero el portal no reconoció la sesión.");
-  } else {
-    log("Sin cookies de sesión vigentes.");
+    log("Sesión reutilizada desde el estado guardado.");
+    return false;
   }
+  log("Sin cookies de sesión vigentes.");
 
   // Se empieza de cero. Keycloak guarda el estado del flujo de autenticacion
   // en cookies (AUTH_SESSION_ID, KC_RESTART); si quedaron viciadas de un
@@ -159,35 +149,67 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
   log("Autenticando desde una sesión limpia.");
 
   await page.goto(URLS.login, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(LOGIN.campoUsuario, { timeout: 30_000 });
 
-  await escribirComoPersona(page, LOGIN.campoUsuario, credenciales.usuario, "usuario");
-  await escribirComoPersona(page, LOGIN.campoClave, credenciales.clave, "clave");
+  // El portal encadena DOS flujos de autenticacion y pide las credenciales en
+  // cada uno. Tras el primer login correcto hace:
+  //   callback con session_state -> logout -> auth nuevo contra el cliente
+  //   del perfil -> y vuelve a mostrar el formulario.
+  // Como el logout intermedio se lleva la sesion SSO, ese segundo formulario
+  // hay que completarlo igual que el primero. Llenarlo una sola vez dejaba el
+  // proceso a mitad de camino, indistinguible de un rechazo.
+  const MAX_ENVIOS = 3;
+  let envios = 0;
 
-  // Enter en el campo de clave: es como envia una persona y dispara el submit
-  // del formulario. Si a los pocos segundos seguimos en el login, se prueba
-  // el boton como respaldo.
-  await page.locator(LOGIN.campoClave).press("Enter");
-  const salio = await page
-    .waitForURL((u) => !u.href.includes(LOGIN.rutaAutenticacion), { timeout: 8_000 })
-    .then(() => true)
-    .catch(() => false);
+  while (envios < MAX_ENVIOS) {
+    const hayFormulario = await page
+      .waitForSelector(LOGIN.campoUsuario, { state: "visible", timeout: envios === 0 ? 30_000 : 10_000 })
+      .then(() => true)
+      .catch(() => false);
 
-  if (!salio) {
-    log("El Enter no envió el formulario; se prueba el botón.");
-    await page.click(LOGIN.botonIngresar).catch(() => {});
+    if (!hayFormulario) break;
+
+    // Si el portal muestra un error, es un rechazo real: no se reintenta.
+    // Reenviar credenciales contra un rechazo es lo que bloquea la cuenta.
+    if ((await page.locator(LOGIN.mensajeError).count()) > 0) break;
+
+    envios += 1;
+    log(`Completando el formulario de login (envío ${envios} de ${MAX_ENVIOS}).`);
+
+    await escribirComoPersona(page, LOGIN.campoUsuario, credenciales.usuario, "usuario");
+    await escribirComoPersona(page, LOGIN.campoClave, credenciales.clave, "clave");
+
+    // Enter es como envia una persona; el boton queda de respaldo.
+    await page.locator(LOGIN.campoClave).press("Enter");
+    const salio = await page
+      .waitForURL((u) => !u.href.includes("login-actions/authenticate"), { timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (!salio) {
+      log("El Enter no envió el formulario; se prueba el botón.");
+      await page.click(LOGIN.botonIngresar).catch(() => {});
+    }
+
+    // No se corta por cookies: durante la cadena, KEYCLOAK_IDENTITY existe un
+    // instante entre el primer POST y el logout intermedio, y cortar ahi deja
+    // el segundo formulario sin completar. Quien decide es la cabecera del
+    // bucle: si el formulario no vuelve a aparecer, la cadena termino.
+    await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
   }
 
-  // Se espera a salir del realm de Keycloak, o a que aparezca el error.
-  await Promise.race([
-    page.waitForURL((u) => !u.href.includes(LOGIN.rutaAutenticacion), { timeout: 45_000 }),
-    page.waitForSelector(LOGIN.mensajeError, { timeout: 45_000 }),
-  ]).catch(() => {});
+  log(`Formulario completado ${envios} vez(ces).`);
+  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
-  // Si seguimos en el login, el intento no prosperó. Se lee AQUI lo que dice
-  // la pantalla, antes de navegar a ningún lado: antes se iba al perfil
-  // primero y eso destruía la única página que explicaba el motivo, dejando
-  // como diagnóstico una suposición nuestra en vez de la razón del portal.
+  // Diagnostico del encadenamiento entre aplicaciones.
+  //
+  // Tras un POST de login correcto, el portal encadena: callback con
+  // session_state -> logout -> auth nuevo contra `app-sri-claves-angular`,
+  // que es el cliente OIDC de /sri-en-linea/ (el perfil), no una app de
+  // cambio de clave. Si ese segundo flujo vuelve a mostrar el formulario, la
+  // sesion SSO no sobrevivio al logout intermedio.
+  const urlFinal = page.url();
+  const enSegundoFlujo = urlFinal.includes(LOGIN.appPerfil);
+
   const siguePidiendoLogin =
     page.url().includes(LOGIN.rutaAutenticacion) ||
     (await page.locator(LOGIN.campoUsuario).count()) > 0;
@@ -196,21 +218,40 @@ export async function asegurarSesion(page, credenciales, guardarSesion) {
     const motivo = await motivoDelRechazo(page);
     const sinMensaje = motivo === SIN_MENSAJE;
 
+    if (sinMensaje) {
+      throw new ErrorCredenciales(
+        `El portal siguió pidiendo credenciales tras completar el formulario ` +
+          `${envios} vez(ces), sin mostrar ningún mensaje de error. ` +
+          (enSegundoFlujo
+            ? "Quedó en el flujo del cliente del perfil, así que la cadena de " +
+              "autenticación necesita más pasos de los previstos. "
+            : "") +
+          "Como el portal no reporta ningún error, la clave no es el problema; " +
+          "subí MAX_ENVIOS en portal.mjs si la cadena creció. " +
+          `URL final: ${urlFinal.slice(0, 160)}`,
+      );
+    }
+
     throw new ErrorCredenciales(
-      `El SRI no aceptó el inicio de sesión del RUC ${credenciales.ruc}. ` +
-        (sinMensaje
-          ? "El portal volvió a mostrar el formulario SIN ningún mensaje de error. " +
-            "Eso NO indica clave incorrecta ni cuenta bloqueada: cuando la clave " +
-            "está mal, el portal lo dice. Sin mensaje suele significar que el " +
-            "formulario no llegó a enviarse o que el flujo de autenticación caducó."
-          : `La pantalla dice: "${motivo}".`) +
-        " No se reintenta automáticamente: varios fallos seguidos sí bloquean la cuenta.",
+      `El SRI rechazó el inicio de sesión del RUC ${credenciales.ruc}. ` +
+        `La pantalla dice: "${motivo}". ` +
+        "No se reintenta automáticamente: varios fallos seguidos bloquean la cuenta.",
     );
   }
 
-  // Tras autenticar, el portal puede aterrizar en distintas pantallas. Se va
-  // al perfil a proposito para comprobar la sesion siempre en el mismo lugar.
-  await page.goto(URLS.perfil, { waitUntil: "domcontentloaded" }).catch(() => {});
+  // Recarga obligatoria: la pantalla donde aterriza la cadena OIDC todavia
+  // esta renderizada como anonima. Las cookies de sesion ya estan en el
+  // contexto, pero el HTML servido es el previo al login, asi que los
+  // marcadores de sesion no aparecen y las pantallas siguientes rompen.
+  // Un reload pide la misma URL ya con las cookies puestas.
+  //
+  // Se recarga en el sitio, sin navegar a `URLS.perfil`: ese vive en
+  // /sri-en-linea/, otra aplicacion OIDC con otro client_id, e ir ahi recien
+  // autenticado disparaba un flujo nuevo que terminaba en logout y tiraba
+  // abajo la sesion recien creada (POST -> 302 -> callback -> .../logout).
+  log("Recargando la página para que el portal renderice la sesión.");
+  await page.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
 
   if (!(await sesionActiva(page))) {
     throw new Error(
