@@ -11,6 +11,7 @@
 import { ejecutar, log, rutaDatos } from "./lib/runner.mjs";
 import { asegurarSesion } from "./lib/portal.mjs";
 import { mapearCasilleros } from "./lib/casilleros.mjs";
+import { URLS } from "./lib/selectores.mjs";
 import {
   abrirPeriodo,
   pasoResaltado,
@@ -23,7 +24,7 @@ await ejecutar("listar-casilleros-104", async ({ page, entrada, credenciales, gu
   const { periodo, periodicidad = "mensual", soloVisibles = true } = entrada;
   if (!periodo?.anio || !periodo?.mes) throw new Error("Falta `periodo.anio` / `periodo.mes`.");
 
-  await asegurarSesion(page, credenciales, guardarSesion);
+  await asegurarSesion(page, credenciales, guardarSesion, { destino: URLS.declaracionIva });
   await abrirPeriodo(page, periodo, periodicidad);
 
   // El cuestionario del paso 2 se salta: el formulario completo muestra

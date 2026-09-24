@@ -164,6 +164,12 @@ export async function ejecutar(nombre, paso) {
     await contexto.storageState({ path: archivoSesion });
   };
 
+  // La fecha de este archivo es la del ultimo login exitoso, y `portal.mjs`
+  // la usa como freno: si un script intenta autenticarse a los segundos de
+  // que otro lo hizo, algo esta mal y hay que parar antes de que el SRI
+  // bloquee la cuenta.
+  process.env.SRI_ARCHIVO_SESION = archivoSesion;
+
   let salida;
   try {
     const datos = await paso({

@@ -13,6 +13,7 @@
     "eval": "eve eval",
     "start": "eve start",
     "typecheck": "tsc",
+    "test": "npm run typecheck && npm run test:selectores && npm run test:mapa104 && npm run test:casilleros && npm run test:listado && npm run test:compras && npm run test:calculo",
     "test:calculo": "node --experimental-strip-types evals/calculo.smoke.mts",
     "sri:setup": "playwright install chromium",
     "sri:check": "node agent/sandbox/workspace/sri/verificar-entorno.mjs",

@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { log } from "./runner.mjs";
 import { LOGIN, URLS } from "./selectores.mjs";
 
@@ -228,14 +229,19 @@ async function sesionActiva(page, msEspera = 12_000) {
   // En el realm de Keycloak no hay sesion, sin mas que mirar.
   if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
 
-  // La cookie de identidad de Keycloak es la señal autoritativa y no depende
-  // del DOM de ninguna pantalla. Se emite al autenticar y se borra al cerrar
-  // sesion, asi que basta con mirarla donde sea que estemos parados.
-  if (await hayCookiesDeSesion(page.context())) return true;
+  // Sin cookie no hay sesion y no hace falta mirar la pantalla.
+  if (!(await hayCookiesDeSesion(page.context()))) return false;
 
-  // Sin la cookie, se da una oportunidad a la marca de pantalla por si el
-  // portal aun no la escribio, compitiendo contra el boton de iniciar sesion
-  // para no agotar la espera cuando efectivamente no hay sesion.
+  // Con cookie, la pantalla decide. Aca estaba el error: se devolvia `true`
+  // por la sola presencia de la cookie, contra lo que dice el contrato de
+  // `hayCookiesDeSesion`. KEYCLOAK_IDENTITY es una cookie de SESION DEL
+  // NAVEGADOR (expires -1): al restaurar un `storageState` guardado vuelve
+  // intacta aunque el servidor haya cerrado la sesion hace horas. El estado
+  // guardado parecia vigente, cada script daba la sesion por buena, navegaba
+  // y el portal lo mandaba al login en medio del paso.
+  //
+  // Se compite la marca de sesion contra el boton de iniciar sesion para no
+  // agotar la espera cuando efectivamente no hay sesion.
   return Promise.race([
     page
       .waitForSelector(LOGIN.marcaSesionActiva, { state: "attached", timeout: msEspera })
@@ -247,20 +253,109 @@ async function sesionActiva(page, msEspera = 12_000) {
 }
 
 /**
+ * Freno contra logins encadenados.
+ *
+ * El SRI bloquea la cuenta tras varios intentos seguidos, así que el peor
+ * fallo posible de este código no es no entrar: es entrar una y otra vez. Un
+ * error al detectar la sesión vigente convierte un flujo de seis pasos en
+ * seis autenticaciones en un minuto, y eso deja al contribuyente sin acceso.
+ *
+ * La fecha del archivo de sesión es la del último login exitoso —solo se
+ * escribe al autenticar—, así que sirve de reloj sin guardar nada nuevo.
+ */
+const ESPERA_MINIMA_ENTRE_LOGINS_MS = 45_000;
+
+async function segundosDesdeElUltimoLogin() {
+  const ruta = process.env.SRI_ARCHIVO_SESION;
+  if (ruta === undefined || ruta === "") return null;
+
+  const info = await stat(ruta).catch(() => null);
+  if (info === null) return null;
+
+  const transcurrido = Date.now() - info.mtimeMs;
+  return transcurrido < ESPERA_MINIMA_ENTRE_LOGINS_MS ? Math.round(transcurrido / 1000) : null;
+}
+
+/**
+ * ¿Sirve todavía la sesión guardada? Se pregunta al portal.
+ *
+ * Se comprueba navegando a LA PANTALLA QUE EL SCRIPT NECESITA, y no a una
+ * genérica. La pregunta que importa no es "¿hay sesión en algún lado?" sino
+ * "¿puedo abrir la pantalla con la que voy a trabajar?", y las dos no dan la
+ * misma respuesta: el portal son varias aplicaciones y cada una decide por su
+ * cuenta si te deja pasar.
+ *
+ * Las dos versiones anteriores fallaron por preguntar en otro lado:
+ *
+ *  - Con la marca positiva `perfil-contribuyente`, que es un componente de
+ *    `/sri-en-linea/`: buscarla en `/tuportal-internet/` no la encuentra
+ *    nunca, ni con la sesión recién creada, así que cada script daba la
+ *    sesión por muerta y volvía a autenticarse a los segundos del login
+ *    anterior. Varios logins seguidos bloquean la cuenta.
+ *  - Con evidencia negativa sobre `/tuportal-internet/`: esa pantalla, con
+ *    la sesión ya caducada, no muestra el formulario de login ni manda al
+ *    realm, así que daba la sesión por buena y el script se estrellaba
+ *    contra el login al navegar a lo suyo.
+ *
+ * Como efecto secundario, al volver `true` la página YA está en el destino:
+ * el script que sigue no necesita navegar de nuevo.
+ *
+ * No se navega al perfil para comprobar: está en otra aplicación OIDC, y
+ * entrar ahí recién autenticado disparaba un flujo nuevo que terminaba en el
+ * endpoint de logout y tiraba abajo la sesión.
+ */
+async function sesionVigente(page, destino) {
+  await page.goto(destino, { waitUntil: "domcontentloaded", timeout: 90_000 }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+
+  if (page.url().includes(LOGIN.rutaAutenticacion)) return false;
+  if ((await page.locator(LOGIN.campoUsuario).count()) > 0) return false;
+  if (await page.locator(LOGIN.marcaSesionAusente).first().isVisible().catch(() => false)) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Deja la página en el portal con sesión iniciada.
  *
  * Reutiliza el `storageState` guardado cuando sigue vigente; solo escribe las
  * credenciales en el formulario si la sesión caducó. Devuelve `true` cuando
  * tuvo que autenticarse de nuevo.
  */
-export async function asegurarSesion(page, credenciales, guardarSesion) {
-  // Si la cookie de identidad de Keycloak sigue viva, la sesion sirve y no
-  // hace falta navegar a ningun lado para comprobarlo.
+export async function asegurarSesion(page, credenciales, guardarSesion, opciones = {}) {
+  // La pantalla contra la que se comprueba la sesión. Cada script pasa la
+  // suya: es la única que responde la pregunta que le importa.
+  const destino = opciones.destino ?? URLS.login;
+  // Hay cookies guardadas: puede haber sesión, pero no está probado. Se
+  // comprueba contra el portal ANTES de darla por buena.
+  //
+  // Antes se devolvía acá mismo, sin mirar nada. Con un `storageState`
+  // guardado de una sesión ya cerrada, cada script del flujo creía tener
+  // sesión, navegaba a su pantalla y el portal lo mandaba al login a mitad
+  // de camino. Corriendo el login suelto no pasaba, porque ese banco arranca
+  // siempre con un contexto limpio.
   if (await hayCookiesDeSesion(page.context())) {
-    log("Sesión reutilizada desde el estado guardado.");
-    return false;
+    if (await sesionVigente(page, destino)) {
+      log("Sesión reutilizada desde el estado guardado.");
+      return false;
+    }
+    log("El estado guardado ya no sirve: el portal volvió a pedir credenciales.");
+  } else {
+    log("Sin cookies de sesión vigentes.");
   }
-  log("Sin cookies de sesión vigentes.");
+
+  // Antes de escribir credenciales: ¿no acabamos de hacerlo?
+  const recien = await segundosDesdeElUltimoLogin();
+  if (recien !== null) {
+    throw new Error(
+      `Se iba a iniciar sesión otra vez ${recien} s después del último login exitoso. ` +
+        "No se hace: varios intentos seguidos bloquean la cuenta en el SRI. " +
+        "Que la sesión recién creada ya no se reconozca es un error de detección, " +
+        "no una sesión caducada; revisá `sesionVigente` en portal.mjs contra la " +
+        "captura de diagnóstico antes de volver a correr el flujo.",
+    );
+  }
 
   // Se empieza de cero. Keycloak guarda el estado del flujo de autenticacion
   // en cookies (AUTH_SESSION_ID, KC_RESTART); si quedaron viciadas de un

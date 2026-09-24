@@ -48,6 +48,83 @@ async function esperarRecaptcha(page) {
     .catch(() => {});
 }
 
+/**
+ * Lanza la consulta por donde la lanza el portal de verdad.
+ *
+ * El `onclick` del botón hace dos cosas, y solo una sirve:
+ *
+ *   deshabilitarBoton(this);
+ *   executeRecaptcha('consulta_cel_recibidos','SI');
+ *   PrimeFaces.ab({source:'frmPrincipal:btnBuscar'});
+ *
+ * Ese `PrimeFaces.ab` sale de inmediato y SIN token: es la petición que el
+ * portal responde con "captcha incorrecto". La consulta buena es otra. En
+ * `sri-reCAPTCHAEnterprise.js` del propio portal:
+ *
+ *   function executeRecaptcha(accion, valida) {
+ *     grecaptcha.enterprise.ready(() => grecaptcha.enterprise.execute({ action: accion }));
+ *   }
+ *   function onSubmit() { rcBuscar(); }   // callback del widget invisible
+ *
+ * O sea: `execute()` pide el token, y cuando llega, reCAPTCHA invoca el
+ * callback `onSubmit`, que llama a `rcBuscar()` — ESA es la búsqueda, y va
+ * con token válido. Todo asíncrono.
+ *
+ * Por eso hacer clic y leer la tabla enseguida daba vacío: se leía la
+ * respuesta de la petición sin token, antes de que llegara la buena. Y por
+ * eso un clic manual "funcionaba": para cuando mirabas, el callback ya había
+ * hecho su trabajo.
+ *
+ * Acá se dispara solo `executeRecaptcha` y se espera al resultado. No se
+ * toca `PrimeFaces.ab`: esa petición sobra y es la que ensucia la pantalla.
+ */
+async function consultarConRecaptcha(page) {
+  // Se hace CLIC en el botón de verdad, no se llama a `executeRecaptcha`
+  // desde `page.evaluate`.
+  //
+  // Probado contra el portal: disparando la función a mano, el portal
+  // responde "Captcha incorrecta" en los tres intentos, con ventana y sin
+  // ella. Con el clic, la consulta pasa. La diferencia es el gesto:
+  // `grecaptcha.enterprise.execute()` invocado desde un script no ocurre
+  // dentro de una interacción del usuario, y eso es exactamente lo que
+  // reCAPTCHA puntúa. Un clic de Playwright sí lo es.
+  //
+  // O sea que el arreglo no era cambiar QUIÉN dispara la consulta, sino
+  // esperar bien el resultado: el clic lanza las dos peticiones del portal
+  // —la que va sin token y la buena, que llega después por el callback— y lo
+  // que fallaba era leer la tabla antes de que llegara la segunda.
+  await page.locator(COMPROBANTES.botonConsultar).scrollIntoViewIfNeeded();
+  await clicComoPersona(page, COMPROBANTES.botonConsultar);
+}
+
+/**
+ * Espera el resultado de la consulta: filas, aviso de "no hay datos" o queja
+ * del captcha. Lo que llegue primero.
+ *
+ * El viaje a Google más la respuesta del portal tardan, así que no alcanza
+ * con mirar la tabla enseguida: eso es exactamente lo que daba "vacío".
+ */
+async function esperarResultado(page, msMaximo = 40_000) {
+  const desde = Date.now();
+
+  // Se espera a las FILAS durante toda la ventana, y los mensajes se miran
+  // recién al final.
+  //
+  // Es deliberado: cada clic dispara DOS peticiones. La primera —el
+  // `PrimeFaces.ab` del onclick— va sin token y pinta "Captcha incorrecta"
+  // en menos de un segundo; la buena llega después, por el callback de
+  // reCAPTCHA. Cortar al ver el mensaje devolvía siempre "captcha" sin haber
+  // esperado la respuesta que sí traía los datos.
+  while (Date.now() - desde < msMaximo) {
+    if ((await page.locator(COMPROBANTES.filasResultados).count()) > 0) return "filas";
+    await page.waitForTimeout(500);
+  }
+
+  if ((await page.locator(COMPROBANTES.mensajeSinResultados).count()) > 0) return "sin-datos";
+  if ((await page.locator(COMPROBANTES.mensajeCaptcha).count()) > 0) return "captcha";
+  return "tiempo-agotado";
+}
+
 /** "0992696036001\nCOMFARMALSA S.A." -> { ruc, razonSocial } */
 function partirEmisor(celda) {
   const lineas = String(celda)
@@ -72,20 +149,25 @@ await ejecutar(
     const { anio, mes, tipoComprobante = "1" } = entrada;
     if (!anio || !mes) throw new Error("Se requieren `anio` y `mes` en la entrada.");
 
-    await asegurarSesion(page, credenciales, guardarSesion);
-
-    await page.goto(URLS.comprobantesRecibidos, {
-      waitUntil: "domcontentloaded",
-      timeout: 90_000,
+    await asegurarSesion(page, credenciales, guardarSesion, {
+      destino: URLS.comprobantesRecibidos,
     });
+
+    // `asegurarSesion` ya dejó la página en esta pantalla al comprobar la
+    // sesión, pero si tuvo que autenticarse quedó en el portal: se asegura.
+    if (!page.url().includes("comprobantesRecibidos")) {
+      await page.goto(URLS.comprobantesRecibidos, {
+        waitUntil: "domcontentloaded",
+        timeout: 90_000,
+      });
+    }
     await page
       .waitForSelector(COMPROBANTES.selectAnio, { timeout: 30_000 })
       .catch(() => {});
     await exigirPantalla(page, COMPROBANTES.selectAnio, "comprobantes recibidos");
 
-    // Antes de tocar nada: que la pantalla tenga historia de interacción. El
-    // botón de consultar envía un token de reCAPTCHA Enterprise que puntúa
-    // justamente eso.
+    // Historia de interacción antes de operar: el token de reCAPTCHA que
+    // viaja con la consulta puntúa lo que pasó en la pantalla.
     await calentarPantalla(page);
 
     // El orden importa: el mes repuebla el día, así que va antes.
@@ -96,34 +178,28 @@ await ejecutar(
 
     await esperarRecaptcha(page);
 
-    // Consultar de nuevo si vuelve vacía.
+    // Consultar de nuevo si el portal se queja del captcha.
     //
     // Es una consulta de solo lectura: repetirla no cambia nada en el portal
-    // ni arriesga la cuenta, a diferencia del login. Y hace falta porque el
-    // token de reCAPTCHA puede salir rechazado, y entonces el portal contesta
-    // como si el período estuviera vacío aunque los filtros estén bien.
+    // ni arriesga la cuenta, a diferencia del login.
     const MAX_CONSULTAS = 3;
     let filasEnPantalla = 0;
     let captchaRechazado = false;
+    let desenlace = "tiempo-agotado";
 
     for (let intento = 1; intento <= MAX_CONSULTAS; intento += 1) {
-      if (intento > 1) {
-        log(
-          `La consulta volvió vacía${captchaRechazado ? " (captcha rechazado)" : ""}; ` +
-            `reintento ${intento} de ${MAX_CONSULTAS}.`,
-        );
-        // Más interacción antes de volver a intentar: si lo que falló fue el
-        // puntaje del token, repetir el mismo gesto da el mismo resultado.
-        await calentarPantalla(page);
-      }
+      if (intento > 1) log(`Reintento ${intento} de ${MAX_CONSULTAS} (${desenlace}).`);
 
-      await clicComoPersona(page, COMPROBANTES.botonConsultar);
+      await consultarConRecaptcha(page);
+      desenlace = await esperarResultado(page);
       await esperarAjax(page);
-      await page.waitForLoadState("networkidle", { timeout: 60_000 }).catch(() => {});
 
       filasEnPantalla = await page.locator(COMPROBANTES.filasResultados).count();
-      captchaRechazado = (await page.locator(COMPROBANTES.mensajeCaptcha).count()) > 0;
-      if (filasEnPantalla > 0) break;
+      captchaRechazado = desenlace === "captcha";
+
+      log(`Consulta ${intento}: ${desenlace} · filas en pantalla: ${filasEnPantalla}`);
+      // "sin-datos" es una respuesta del portal, no un fallo: no se reintenta.
+      if (desenlace === "filas" || desenlace === "sin-datos") break;
     }
 
     // Un captcha rechazado NO es un período vacío.
@@ -160,7 +236,15 @@ await ejecutar(
           : `La tabla quedó vacía y el portal no dijo que no hubiera datos ` +
             `(${MAX_CONSULTAS} consultas). Verificá el período a mano.`,
       );
-      return { periodo: { anio, mes }, filas: [], archivoListado: null, sinDatos: loDice };
+      return {
+        periodo: { anio, mes },
+        filas: [],
+        archivoListado: null,
+        // La forma del resultado es la misma tanto si hay filas como si no:
+        // un campo que aparece a veces obliga a quien lo consume a adivinar.
+        filasDescuadradas: 0,
+        sinDatos: loDice,
+      };
     }
 
     const celdasPorFila = await page

@@ -12,7 +12,7 @@ import {
   llenarFormulario104,
   pasoResaltado,
 } from "./lib/formulario104.mjs";
-import { DECLARACION_104 } from "./lib/selectores.mjs";
+import { DECLARACION_104, URLS } from "./lib/selectores.mjs";
 import { mkdir } from "node:fs/promises";
 
 await ejecutar("presentar-104", async ({ page, entrada, credenciales, guardarSesion }) => {
@@ -21,7 +21,7 @@ await ejecutar("presentar-104", async ({ page, entrada, credenciales, guardarSes
     throw new Error("Falta la confirmación explícita de presentación.");
   }
 
-  await asegurarSesion(page, credenciales, guardarSesion);
+  await asegurarSesion(page, credenciales, guardarSesion, { destino: URLS.declaracionIva });
   const { escritos } = await llenarFormulario104(page, periodo, casilleros, {
     ruc: credenciales.ruc,
   });

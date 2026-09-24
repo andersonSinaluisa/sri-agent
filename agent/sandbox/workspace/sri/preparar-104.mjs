@@ -5,6 +5,7 @@
 import { ejecutar, rutaDatos } from "./lib/runner.mjs";
 import { asegurarSesion } from "./lib/portal.mjs";
 import { llenarFormulario104, leerCasilleros } from "./lib/formulario104.mjs";
+import { URLS } from "./lib/selectores.mjs";
 import { mkdir } from "node:fs/promises";
 
 await ejecutar("preparar-104", async ({ page, entrada, credenciales, guardarSesion }) => {
@@ -14,7 +15,7 @@ await ejecutar("preparar-104", async ({ page, entrada, credenciales, guardarSesi
     throw new Error("No se recibió ningún casillero para escribir.");
   }
 
-  await asegurarSesion(page, credenciales, guardarSesion);
+  await asegurarSesion(page, credenciales, guardarSesion, { destino: URLS.declaracionIva });
   const { escritos, resumen, mensajes } = await llenarFormulario104(page, periodo, casilleros, {
     ruc: credenciales.ruc,
   });
